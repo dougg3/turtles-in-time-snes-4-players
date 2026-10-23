@@ -1,0 +1,25 @@
+# Regression scenario: power-on -> 2P -> Scene 4 ($82=3) -> 3000 frames of AI play (god mode).
+# Deterministic with Snes.RamPowerOnState = AllZeros. Hashes WRAM/OAM/CGRAM every 4 frames.
+rngpin
+bg framehash h 4 5200
+wait 900
+tap 0 start
+wait 300
+tap 0 down
+wait 20
+tap 0 start
+wait 400
+poke 82 03 00
+tap 0 b 4
+wait 10
+tap 1 b 4
+wait 200
+tap 0 start 4
+wait 60
+tap 0 start 4
+wait 400
+ai 0 on
+ai 1 on
+god on
+wait 3000
+end

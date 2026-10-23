@@ -1,0 +1,10 @@
+# Regression scenario: start of Scene 10, 9000 frames of 2P AI play WITHOUT god mode
+# (covers deaths, respawn and continues). Random source pinned (rngpin).
+load build/regress/states/scene10.mss
+rngpin
+bg framehash h 4 9000
+bg cpurec lag 9000
+ai 0 on
+ai 1 on
+wait 9000
+end

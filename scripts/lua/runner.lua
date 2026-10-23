@@ -48,6 +48,9 @@
 --   framehash <name> <every> <frames>
 --                          every N frames write "<frame> <OAM+CGRAM crc> <wram $0000-$1FFF crc>" -> <out>/<name>.hash
 --                          (screen buffer reads are not frame-exact in Mesen, so PPU memories are hashed instead)
+--   rngpin                 at every NMI entry ($00:8174) set $0094 (idle-loop random source)
+--                          to a value derived from the frame number, so runs of ROMs with
+--                          different CPU timing see identical randomness (regression testing)
 --   bg <command ...>       run a recorder (trace/watch/oamrec/cpurec/memrec) without waiting for it
 --   end                    stop emulator
 
@@ -406,6 +409,12 @@ local function step()
       waitFor(tonumber(c[4]))
     elseif op == "mtap" then
       mtapHeld[tonumber(c[2])] = parseButtons(c[3])
+    elseif op == "rngpin" then
+      emu.addMemoryCallback(function()
+        local v = (frame * 0x9E37 + 0x79B9) & 0xFFFF
+        emu.write(0x94, v & 0xFF, emu.memType.snesWorkRam)
+        emu.write(0x95, v >> 8, emu.memType.snesWorkRam)
+      end, emu.callbackType.exec, NMI_HANDLER)
     elseif op == "god" then
       godMode = c[2] == "on"
     elseif op == "ai" then
@@ -529,8 +538,16 @@ emu.addEventCallback(function()
       local scr = {}
       for a = 0, 543 do scr[#scr + 1] = emu.read(a, emu.memType.snesSpriteRam) end
       for a = 0, 511 do scr[#scr + 1] = emu.read(a, emu.memType.snesCgRam) end
+      -- addresses listed in TMNT_HASH_EXCLUDE ("20-2F,DC-E3", hex) are hashed as 0:
+      -- RAM a patch deliberately repurposes, so the rest of the state can still be compared
+      if not fhash.excl then
+        fhash.excl = {}
+        for a0, a1 in (os.getenv("TMNT_HASH_EXCLUDE") or ""):gmatch("(%x+)-(%x+)") do
+          for a = tonumber(a0, 16), tonumber(a1, 16) do fhash.excl[a] = true end
+        end
+      end
       local w = {}
-      for a = 0, 0x1FFF do w[a + 1] = emu.read(a, emu.memType.snesWorkRam) end
+      for a = 0, 0x1FFF do w[a + 1] = fhash.excl[a] and 0 or emu.read(a, emu.memType.snesWorkRam) end
       fhash.file:write(string.format("%d %08X %08X\n", frame, crc(scr, #scr), crc(w, 0x2000)))
     end
     if frame >= fhash.untilFrame then fhash.file:close(); fhash = nil end
@@ -573,13 +590,21 @@ emu.addEventCallback(function()
 end, emu.eventType.endFrame)
 
 emu.addMemoryCallback(function()
-  if pendingLoad then
-    emu.loadSavestate(pendingLoad)
-    pendingLoad = nil
-    say("frame %d: state loaded", frame)
-  elseif pendingSave then
-    writeFile(pendingSave, emu.createSavestate())
-    say("frame %d: saved %s", frame, pendingSave)
-    pendingSave = nil
+  -- errors here would otherwise be dropped by Mesen and leave the run waiting forever
+  local ok, err = pcall(function()
+    if pendingLoad then
+      emu.loadSavestate(pendingLoad)
+      pendingLoad = nil
+      say("frame %d: state loaded", frame)
+    elseif pendingSave then
+      local name = pendingSave
+      pendingSave = nil
+      writeFile(name, emu.createSavestate())
+      say("frame %d: saved %s", frame, name)
+    end
+  end)
+  if not ok then
+    say("frame %d: ERROR %s", frame, tostring(err))
+    emu.stop(1)
   end
 end, emu.callbackType.exec, NMI_HANDLER)

@@ -38,4 +38,4 @@ def entries(t):
 
 print(f"{len(tables)} tables indexed by the player index:")
 for t, uses in sorted(tables.items()):
-    print(f"  $01:{t:04X} [P1 P2 next next] = {entries(t)}   used at {', '.join(uses[:4])}{' ...' if len(uses) > 4 else ''}")
+    print(f"  $01:{t:04X} [P1 P2 next next] = {entries(t)}   used at {', '.join(uses)}")
