@@ -47,26 +47,17 @@ SpawnPlayers4:
     jsl HudQueueFrame       ; 3P/4P: compact HUD frame first (hud4.asm), contents follow
     jsl Orig_SpawnPlayers
     lda !PlayerMode : and #$00FF : cmp #$0003 : bcc .done
-    ; first time in 3P/4P: assign pointers and initialize info blocks (as $04:977F)
-    lda !P3_ptr : bne +
-    lda.w #!P3_slot : sta !P3_ptr
-    ldx.w #!P3_info : jsl Orig_InfoInit
-    jsr .joined
-+   lda !PlayerMode : and #$00FF : cmp #$0004 : bcc +
-    lda !P4_ptr : bne +
-    lda.w #!P4_slot : sta !P4_ptr
-    ldx.w #!P4_info : jsl Orig_InfoInit
-    jsr .joined
-+   ldx !P3_ptr : beq +
+    ; P3/P4 in the game have their pointer set (turtle select or joining in play)
+    ldx !P3_ptr : beq +
     lda.w !P3_char : ldy.w #!P3_info : jsr .spawn
-+   ldx !P4_ptr : beq .done
+    bra ++
++   ldx.w #!P3_info : jsl HudAbsent4
+++  ldx !P4_ptr : beq +
     lda.w !P4_char : ldy.w #!P4_info : jsr .spawn
+    bra .done
++   ldx.w #!P4_info : jsl HudAbsent4
 .done:
     rtl
-.joined:                    ; X = info block: values character select leaves for P1/P2
-    lda #$0004 : sta $000E,x    ; ($1A8E/$1A90 for P1)
-    lda #$0001 : sta $0010,x
-    rts
 .spawn:                     ; X = object, A = character, Y = info block
     phy
     sta $14,x
@@ -195,9 +186,9 @@ PlayerPtrTable:
 OthersInPlay:
     lda $1ACE : beq + : bpl .yes
 +   lda !PlayerMode : and #$00FF : cmp #$0003 : bcc .no
-    lda !P3_ptr : beq +
-    lda.w !P3_info+$0E : beq + : bpl .yes
-+   lda !P4_ptr : beq .no
+    lda.l !SelSession : and #$0004 : beq +     ; joined this game (pointers are
+    lda.w !P3_info+$0E : beq + : bpl .yes       ; already cleared here)
++   lda.l !SelSession : and #$0008 : beq .no
     lda.w !P4_info+$0E : beq .no : bpl .yes
 .no:
     sec

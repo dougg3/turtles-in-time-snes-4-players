@@ -33,7 +33,8 @@
 --   poke <addr> <byte> [byte...]  write WRAM bytes (hex) - experiment only, never touches ROM
 --   ai <player> <on|off>   RAM-driven bot for that player (0-1 = ports; 2-3 = P3/P4 via multitap): approach nearest enemy (slots 11-19),
 --                          match depth, attack; walk right when no enemies. Overrides hold/tap.
---   god <on|off>           measurement aid: keep each player's health (object +$4A) at the highest
+--   god <on|off> [p...]    measurement aid: keep each player's health (object +$4A) at the highest
+--                          (optional player numbers 1-4: only those players; default all four)
 --                          value seen, so players never die. Hits/knockdowns still happen.
 --   dmarec <name> <frames> log every general DMA started via $420B: "<frame> <pc> <ch> <$43x0>
 --                          <B-bus $43x1> <src bank:addr> <size> <VMADD $2116> <V>" -> <out>/<name>.dma
@@ -52,6 +53,8 @@
 --   rngpin                 at every NMI entry ($00:8174) set $0094 (idle-loop random source)
 --                          to a value derived from the frame number, so runs of ROMs with
 --                          different CPU timing see identical randomness (regression testing)
+--   spcrec <name> <frames> sound DSP voices every frame: <8 x ENVX> <key-on mask this frame>
+--                          <mask of voices keyed on while still sounding (ENVX > 0)> -> <out>/<name>.spcrec
 --   bg <command ...>       run a recorder (trace/watch/oamrec/cpurec/memrec) without waiting for it
 --   end                    stop emulator
 
@@ -123,6 +126,7 @@ local aiIgnore = {}
 local playerGone = { [0] = 0, [1] = 0, [2] = 0, [3] = 0 }
 local godMode = false
 local godMax = {}
+local godSlots = { 0x0400, 0x0470, 0x0630, 0x0710 }
 
 -- Stuck recovery. Progress = BG1 scroll changing ($17A0 X, $17B0 Y).
 -- Some areas need the player at a particular depth before the screen will
@@ -241,6 +245,7 @@ local trace
 local oamrec
 local cpurec
 local memrec
+local spcrec
 local hooks
 local mtapHeld = {}
 local inputLog, replayLines, replayPos, fhash
@@ -369,6 +374,21 @@ local function step()
     elseif op == "cpurec" then
       startCpuRec(c[2], tonumber(c[3]))
       waitFor(tonumber(c[3]))
+    elseif op == "spcrec" then
+      local r = { name = c[2], untilFrame = frame + tonumber(c[3]), count = 0, addr = 0, kon = 0, busy = 0,
+                  file = assert(io.open(out .. "/" .. c[2] .. ".spcrec", "wb")) }
+      r.refF2 = emu.addMemoryCallback(function(a, v) r.addr = v end, emu.callbackType.write, 0xF2, 0xF2,
+                                      emu.cpuType.spc, emu.memType.spcMemory)
+      r.refF3 = emu.addMemoryCallback(function(a, v)
+        if (r.addr & 0x7F) == 0x4C and v ~= 0 then
+          r.kon = r.kon | v
+          for i = 0, 7 do
+            if (v >> i) & 1 == 1 and emu.read(i * 16 + 8, emu.memType.spcDspRegisters) > 0 then r.busy = r.busy | (1 << i) end
+          end
+        end
+      end, emu.callbackType.write, 0xF3, 0xF3, emu.cpuType.spc, emu.memType.spcMemory)
+      spcrec = r
+      waitFor(tonumber(c[3]))
     elseif op == "memrec" then
       memrec = { name = c[2], start = tonumber(c[3], 16), len = tonumber(c[4], 16),
                  untilFrame = frame + tonumber(c[5]), count = 0,
@@ -377,7 +397,7 @@ local function step()
     elseif op == "hooks" then
       local lines, refs, addrs = {}, {}, {}
       for i = 4, #c do
-        local a = tonumber(c[i]:gsub(":", ""), 16)
+        local a = tonumber((c[i]:gsub(":", "")), 16)
         addrs[#addrs + 1] = a
         refs[#refs + 1] = emu.addMemoryCallback(function()
           local st = emu.getState()
@@ -429,6 +449,12 @@ local function step()
       end, emu.callbackType.exec, NMI_HANDLER)
     elseif op == "god" then
       godMode = c[2] == "on"
+      local all = { 0x0400, 0x0470, 0x0630, 0x0710 }
+      godSlots = all
+      if c[3] then
+        godSlots = {}
+        for i = 3, #c do godSlots[#godSlots + 1] = all[tonumber(c[i])] end
+      end
     elseif op == "ai" then
       aiPorts[tonumber(c[2])] = c[3] == "on" or nil
     elseif op == "dmarec" then
@@ -526,7 +552,7 @@ emu.addEventCallback(function()
   end
   if godMode then
     -- Real health is player object +$4A ($00:C8AF only copies a scaled value to the HUD).
-    for _, slot in ipairs({ 0x0400, 0x0470, 0x0630, 0x0710 }) do
+    for _, slot in ipairs(godSlots) do
       local hp = rd16(slot + 0x4A)
       godMax[slot] = math.max(godMax[slot] or 0, hp)
       if hp > 0 and hp < godMax[slot] then
@@ -596,6 +622,21 @@ emu.addEventCallback(function()
       memrec.file:close()
       say("memrec %s: %d frames x %d bytes", memrec.name, memrec.count, memrec.len)
       memrec = nil
+    end
+  end
+  if spcrec then
+    local r, parts = spcrec, {}
+    for i = 0, 7 do parts[#parts + 1] = string.char(emu.read(i * 16 + 8, emu.memType.spcDspRegisters)) end
+    parts[#parts + 1] = string.char(r.kon)
+    parts[#parts + 1] = string.char(r.busy)
+    r.file:write(table.concat(parts))
+    r.kon, r.busy, r.count = 0, 0, r.count + 1
+    if frame >= r.untilFrame then
+      emu.removeMemoryCallback(r.refF2, emu.callbackType.write, 0xF2, 0xF2, emu.cpuType.spc, emu.memType.spcMemory)
+      emu.removeMemoryCallback(r.refF3, emu.callbackType.write, 0xF3, 0xF3, emu.cpuType.spc, emu.memType.spcMemory)
+      r.file:close()
+      say("spcrec %s: %d frames", r.name, r.count)
+      spcrec = nil
     end
   end
   if oamrec then

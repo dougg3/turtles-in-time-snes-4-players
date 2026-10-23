@@ -20,14 +20,12 @@ Orig_Shift2_EEDD  = $00EEDD
 org $00FE70
 assert Players4End <= $00FE70, "players4 code runs into player_region code"
 
-; X = object; Z set (and returns) if X is a P3/P4 main slot in 3P/4P mode.
+; X = object; Z set (and returns) if X is the P3/P4 player object (slots4.asm).
 IsP34Main:
-    cpx #!P3_slot : beq +
-    cpx #!P4_slot : bne ++
-+   lda !PlayerMode : and #$00FF : cmp #$0003 : bcc ++
+    jsl P34Live : bcc +
     lda #$0000                      ; Z = 1: skip
     rts
-++  lda #$0001                      ; Z = 0
++   lda #$0001                      ; Z = 0
     rts
 
 ; ---- companion-B loop ($00:C448, slots 4-7) ----
@@ -118,15 +116,10 @@ PlayerRegionEnd:
 assert PlayerRegionEnd <= $00FFB0, "player_region code overflows bank $00 padding"
 
 ; ---- $04:85F8 loop end: STZ $0456 / STZ $04C6 (P1/P2 +$56) -> also P3/P4 ----
-org $00FBD0
-assert PlayerHelpersEnd <= $00FBD0, "player helpers run into Clear56"
+org $00FBFC
+assert PlayerHelpersEnd <= $00FBFC, "player helpers run into Clear56"
 Clear56:
-    stz $0456 : stz $04C6
-    lda !PlayerMode : and #$00FF : cmp #$0003 : bcc +
-    stz !P3_slot+$56 : stz !P4_slot+$56
-    stz !P3_compA+$4E : stz !P4_compA+$4E
-    stz !P3_compB+$4E : stz !P4_compB+$4E
-+   rtl
+    jml Clear56Far
 Clear56End:
 assert Clear56End <= $00FC00, "Clear56 overflows its gap (players4 code at $00:FC00)"
 
@@ -246,8 +239,8 @@ ClearExtras:                        ; was STA $000400 (A = 0)
 ; mains and companions, then returns X = $08D0 as the original. ----
 Prio0Extra:
     lda.l !PlayerMode : and #$00FF : cmp #$0003 : bcc .slot9
-    ldx.w #!P3_slot : jsr .obj
-    ldx.w #!P4_slot : jsr .obj
+    ldx.w #!P3_slot : jsr .main
+    ldx.w #!P4_slot : jsr .main
     ldx.w #!P3_compB : jsr .obj
     ldx.w #!P4_compB : jsr .obj
     ldx.w #!P3_compA : jsr .compA
@@ -255,6 +248,9 @@ Prio0Extra:
 .slot9:
     ldx #$08D0
     rtl
+.main:
+    jsl P34Live : bcs .obj
+    rts
 .obj:                               ; as $00:96A1
     lda $14,x : beq +
     lda $12,x : cmp $00
@@ -270,8 +266,8 @@ Prio0Extra:
 
 Prio3Extra:
     lda.l !PlayerMode : and #$00FF : cmp #$0003 : bcc .slot9
-    ldx.w #!P3_slot : jsr .obj
-    ldx.w #!P4_slot : jsr .obj
+    ldx.w #!P3_slot : jsr .main
+    ldx.w #!P4_slot : jsr .main
     ldx.w #!P3_compB : jsr .obj
     ldx.w #!P4_compB : jsr .obj
     ldx.w #!P3_compA : jsr .compA
@@ -282,6 +278,9 @@ Prio3Extra:
 .compA:                             ; as $03:8790
     lda $12,x : bne .obj
     lda $0C,x : bra .cmp
+.main:
+    jsl P34Live : bcs .obj
+    rts
 .obj:                               ; as $03:8798
     lda $14,x : beq +
     lda $12,x

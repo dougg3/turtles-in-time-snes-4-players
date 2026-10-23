@@ -43,6 +43,47 @@
 !P4_ptr          = $1A76
 !PlayerMode      = $1A78   ; 0 = original game, 3 = three players, 4 = four players
 
+; ---- variables: $1BA0-$1BBF (free; after P4's info block) ----
+!HudMsgPhase     = $1BA0   ; 4 words: compact HUD message alternation (PRESS/START, GAME/OVER)
+!HudMsgTimer     = $1BA8   ; 4 words: GAME/OVER alternation timer
+!InfoTmp         = $1BB0   ; scratch for info4.asm
+!InfoCnt         = $1BB2
+!CharCand        = $1BB4   ; CharFree4: candidate turtle
+!CharOwn         = $1BB6   ; CharFree4: own player index * 2
+!HudColP3        = $1BB8   ; P3 box color 1 (by turtle, as the original does for P1/P2)
+!HudColP4        = $1BBA
+
+; ---- variables: $1C80-$1CFF (free) ----
+!HudFrameOn      = $1C80   ; non-zero: the compact 4-box frame is on screen
+!HudFadeK        = $1C82   ; NMI: screen fade (amount subtracted from each color channel)
+!HudFadeTmp      = $1C84
+!HudFadeOut      = $1C86
+!HudFadeP3       = $1C88   ; NMI: faded P3/P4 box color 1
+!HudFadeP4       = $1C8A
+!Sel4State       = $1C8C   ; turtle select: 0 unchecked, 1 four-player select, 2 off,
+                           ; 3 four-player select ended with nobody extra (back to 2P)
+!SelHover        = $1C8E   ; turtles with a cursor on them (bit t), portraits in color
+!SelTick         = $1C90   ; frame counter for the cursor animation
+!SelCount        = $1C92   ; 4 words: cursors per turtle (display pass)
+!SelSession      = $1C9A   ; P3/P4 in this game (bits $0004/$0008, as SelBit); new game: 0
+!SelCont         = $1C9C   ; non-zero: the select screen after a continue (no joining)
+; select4.asm scratch ($1CA0-$1CBF)
+!SelCand         = $1CA0   ; candidate turtle
+!SelDir          = $1CA2   ; step direction (1 or 3)
+!SelLkTurtle     = $1CA4   ; SelLocked: turtle
+!SelLkMe         = $1CA6   ; SelLocked: asking player
+!SelHvTurtle     = $1CA8   ; SelHovered: turtle
+!SelPad          = $1CAA   ; new buttons of the player being handled
+!SelMe           = $1CAC   ; player index * 2 being handled
+!SelTurtle       = $1CAE   ; turtle just confirmed / being drawn
+!SelMask         = $1CB0   ; turtles with a cursor (this frame)
+!SelChanged      = $1CB2
+!SelPos          = $1CB4   ; position in a turtle's stack of cursors
+!SelVar          = $1CB6   ; cursor frame variant (0 or $20)
+!SelFrozen       = $1CB8   ; confirmed (cursor not animated)
+!SelN            = $1CBA   ; frame copy: entries left
+!SelChr          = $1CBC   ; character of the player being updated
+
 ; ---- direct page ----
 !P3_char   = $D4           ; character (object type), like $D0/$D2
 !P4_char   = $D8

@@ -1,0 +1,107 @@
+# Manual 4-player run to the full-screen continue: everyone joins at select; P2-P4
+# run out of lives first (box countdowns expire), then P1, which brings up the
+# full-screen continue (Port2 = Multitap). Starts from build/states/charsel_2p.mss.
+load build/states/charsel_2p.mss
+wait 10
+mtap 1 start
+wait 4
+mtap 1 -
+wait 10
+mtap 2 start
+wait 4
+mtap 2 -
+wait 10
+tap 0 b 4
+wait 10
+tap 1 b 4
+wait 10
+mtap 1 b
+wait 4
+mtap 1 -
+wait 10
+mtap 2 b
+wait 4
+mtap 2 -
+wait 200
+tap 0 start 4
+wait 60
+tap 0 start 4
+wait 900
+shot s0
+poke 1AE0 00 00
+poke 1B40 00 00
+poke 1B80 00 00
+poke 04BA 01 00
+poke 067A 01 00
+poke 075A 01 00
+hold 0 right
+hold 1 right
+mtap 1 right
+mtap 2 right
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+wait 60
+poke 044A 20 00
+shot c0
+peek 1A80 2
+peek 1AC0 2
+peek 1B20 2
+peek 1B60 2
+poke 1AA0 00 00
+poke 044A 01 00
+wait 500
+shot c1
+peek 70 4
+peek 1A80 2
+peek 1AC0 2
+peek 1B20 2
+peek 1B60 2
+wait 200
+shot c2
+end

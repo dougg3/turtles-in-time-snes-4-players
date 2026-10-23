@@ -6,7 +6,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 # the scenarios start from save states of the clean ROM: made once
-[ -f "$root/build/regress/states/scene1.mss" ] || "$root/scripts/make_regress_states.sh" > /dev/null
+[ -f "$root/build/regress/states/scene1_1p.mss" ] || "$root/scripts/make_regress_states.sh" > /dev/null
 if [ "${1:-}" = baseline ]; then
   rom="$root/original/Teenage Mutant Ninja Turtles IV - Turtles in Time (USA).sfc"; dest="$root/build/regress/baseline"
 else

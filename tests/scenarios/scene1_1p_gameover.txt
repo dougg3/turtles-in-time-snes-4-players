@@ -1,0 +1,14 @@
+# Regression scenario: 1-player game, Scene 1. P1 walks into the enemies with one
+# health point and no lives left, until the continue screen and beyond (covers the
+# 1P out-of-lives path at $00:CEFE/$00:CF2D). Start state: make_regress_states.sh.
+load build/regress/states/scene1_1p.mss
+rngpin
+wait 300
+poke 1AA0 00 00
+poke 044A 01 00
+hold 0 right
+bg framehash h 4 4000
+bg cpurec lag 4000
+wait 4000
+shot end
+end

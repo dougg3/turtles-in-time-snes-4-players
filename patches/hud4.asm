@@ -22,6 +22,7 @@ Orig_NameNext  = $04D75D
 Orig_BarNext   = $04D79D
 Orig_ScoreNext = $04D89F
 Orig_LivesNext = $04D9B2
+Orig_StateMachine = $04D3C3     ; player info state machine (info4.asm)
 
 !HudBlankTile  = $2100          ; tile $100 (blank), palette 0, priority
 !HudBorderTop  = $255F          ; border line tiles, palette 1
@@ -29,9 +30,17 @@ Orig_LivesNext = $04D9B2
 
 org $208000
 ; ---- helpers ----
-; Carry set if the compact HUD is active (3P/4P mode). Clobbers A.
-HudCompact:
+; Carry set in 3P/4P mode (game rules for four players). Clobbers A.
+HudFourMode:
     lda.l !PlayerMode : and #$00FF : cmp #$0003
+    rts
+
+; Carry set if the compact 4-box frame is on screen (3P/4P mode, drawn at stage
+; start; the game-over and continue screens bring the 2-box HUD back). Clobbers A.
+HudCompact:
+    lda.l !HudFrameOn : beq +
+    bra HudFourMode
++   clc
     rts
 
 ; X = info block -> X = player index * 2 (0/2/4/6); unknown -> 2 (P2, the original default).
@@ -58,8 +67,10 @@ HudScorePos:  dw $5003, $500B, $5013, $501B   ; row 0, cols 8b+3..8b+6
 HudLivesPos:  dw $5041, $5049, $5051, $5059   ; rows 2-3, col 8b+1
 HudBarPos:    dw $5043, $504B, $5053, $505B   ; rows 2-3, cols 8b+3..8b+6
 HudBarTiles:  dw $007A, $007C, $007C, $007E   ; shade per bar tile: solid, dotted, dotted, white
-HudPalP3:     dw $7E38, $7FFF, $6940          ; P3 colors 1-3: purple #C088F8, white, dark blue
-HudPalP4:     dw $319F, $7FFF, $6940          ; P4 colors 1-3: red #F86060, white, dark blue
+HudPalCommon: dw $7FFF, $6940                 ; box colors 2-3: white, dark blue (all players)
+; Box color 1 follows the turtle, as the original sets it for P1/P2 ($04:9812,
+; measured in CGRAM): Leo, Mike, Don, Raph.
+HudTurtleColor: dw $7F13, $02DF, $7E3F, $013F
 
 ; BG3 rows 0-3 (32 words each): frame and badges of the four boxes.
 macro hudbox_r0(n, pal)
@@ -92,7 +103,8 @@ assert HudFrameTemplateEnd-HudFrameTemplate == 256, "HUD frame template must be 
 ; map in the decompressor's buffer instead costs cycles in an idle-time job and
 ; shifts 2P timing.) Clobbers A, X, Y.
 HudQueueFrame:
-    jsr HudCompact : bcc .done
+    jsr HudFourMode : bcc .done
+    lda #$0001 : sta.l !HudFrameOn
     lda #$0000
 .row:
     pha                             ; A = byte offset of the row in the template
@@ -139,6 +151,17 @@ macro hud_entry_rom(n, lines, cg, word)   ; HDMA entry n: CGRAM[cg] = word, then
     lda.l <word> : sta.l !HudHdmaTable+(5*<n>)+3
     lda.l <word>+1 : sta.l !HudHdmaTable+(5*<n>)+4
 endmacro
+macro hud_color_buf(cg, src)       ; CGRAM[cg] = buffer color src (vblank; X = buffer)
+    lda #<cg> : sta $2121
+    lda.l $7E0000+(2*<src>),x : sta $2122
+    lda.l $7E0001+(2*<src>),x : sta $2122
+endmacro
+macro hud_entry_buf(n, lines, cg, src)    ; HDMA entry n: CGRAM[cg] = buffer color src, then wait
+    lda #<lines> : sta.l !HudHdmaTable+(5*<n>)
+    lda #<cg> : sta.l !HudHdmaTable+(5*<n>)+1 : sta.l !HudHdmaTable+(5*<n>)+2
+    lda.l $7E0000+(2*<src>),x : sta.l !HudHdmaTable+(5*<n>)+3
+    lda.l $7E0001+(2*<src>),x : sta.l !HudHdmaTable+(5*<n>)+4
+endmacro
 macro hud_entry_scene(n, cg)        ; HDMA entry n: 1 line, CGRAM[cg] = scene color (X = buffer)
     lda #$01 : sta.l !HudHdmaTable+(5*<n>)
     lda #<cg> : sta.l !HudHdmaTable+(5*<n>)+1 : sta.l !HudHdmaTable+(5*<n>)+2
@@ -157,11 +180,18 @@ HudNmi:
     plp
     rtl
 .on:
+    phx
+    ldx $42                         ; X = the game's CGRAM buffer (bank $7E)
+    lda.l $7E000C,x : and #$001F    ; P1 box color 2 (white) as faded by the game:
+    eor #$001F : sta.l !HudFadeK    ; fade = 31 - red (subtracted from every channel)
+    lda.l !HudColP3 : jsr HudFade : sta.l !HudFadeP3
+    lda.l !HudColP4 : jsr HudFade : sta.l !HudFadeP4
     sep #$20                        ; A 8-bit, X/Y 16-bit
     lda $4212 : bpl .late           ; NMI ran past vblank (a long upload): CGRAM writes
-    %hud_color(25, HudPalP3) : %hud_color(26, HudPalP3+2) : %hud_color(27, HudPalP3+4)
-    %hud_color(29, HudPalP4) : %hud_color(30, HudPalP4+2) : %hud_color(31, HudPalP4+4)
+    %hud_color(25, !HudFadeP3) : %hud_color_buf(26, 6) : %hud_color_buf(27, 7)
+    %hud_color(29, !HudFadeP4) : %hud_color_buf(30, 6) : %hud_color_buf(31, 7)
 .late:                              ; now would show as streaks on the top lines
+    plx
     lda $1ED2 : cmp #$02 : bcs +
     jmp .nohdma
 +   lda $1ED2
@@ -170,9 +200,9 @@ HudNmi:
 +   dec                             ; channel = [$1ED2] - 1 (at most 7)
     pha
     ldx $42                         ; X = the game's CGRAM buffer (bank $7E)
-    %hud_entry_rom(0, 1, 25, HudPalP3) : %hud_entry_rom(1, 1, 26, HudPalP3+2)
-    %hud_entry_rom(2, 1, 27, HudPalP3+4) : %hud_entry_rom(3, 1, 29, HudPalP4)
-    %hud_entry_rom(4, 1, 30, HudPalP4+2) : %hud_entry_rom(5, 27, 31, HudPalP4+4)
+    %hud_entry_rom(0, 1, 25, !HudFadeP3) : %hud_entry_buf(1, 1, 26, 6)
+    %hud_entry_buf(2, 1, 27, 7) : %hud_entry_rom(3, 1, 29, !HudFadeP4)
+    %hud_entry_buf(4, 1, 30, 6) : %hud_entry_buf(5, 27, 31, 7)
     %hud_entry_scene(6, 25) : %hud_entry_scene(7, 26) : %hud_entry_scene(8, 27)
     %hud_entry_scene(9, 29) : %hud_entry_scene(10, 30) : %hud_entry_scene(11, 31)
     lda #$00 : sta.l !HudHdmaTable+60
@@ -196,9 +226,31 @@ HudNmi:
     rtl
 HudChannelBit: db $01, $02, $04, $08, $10, $20, $40, $80
 
+; A = color -> A = color with !HudFadeK subtracted from each channel (at least 0),
+; as the game fades its palettes. 16-bit A.
+HudFade:
+    sta.l !HudFadeTmp
+    lda.l !HudFadeK : bne +
+    lda.l !HudFadeTmp
+    rts
++   lda.l !HudFadeTmp : and #$001F
+    sec : sbc.l !HudFadeK : bpl +
+    lda #$0000
++   sta.l !HudFadeOut                         ; red
+    lda.l !HudFadeTmp : lsr #5 : and #$001F
+    sec : sbc.l !HudFadeK : bpl +
+    lda #$0000
++   asl #5 : ora.l !HudFadeOut : sta.l !HudFadeOut   ; green
+    lda.l !HudFadeTmp : xba : lsr #2 : and #$001F
+    sec : sbc.l !HudFadeK : bpl +
+    lda #$0000
++   xba : asl #2 : ora.l !HudFadeOut          ; blue
+    rts
+
 ; ---- per-frame driver ($04:D34D, was JSL $04D39C): P1, then P3/P4 HUD updates ----
-; Same rules as the original for P1/P2: one dirty item per frame (info +$2C:
-; bit 0 health bar, bit 1 score, else lives), only while the player object exists.
+; Same rules as the original for P1/P2: while the player object exists, one dirty
+; item per frame (info +$2C: bit 0 health bar, bit 1 score, else lives); otherwise
+; the info state machine (join, continue, game over), then the score if dirty.
 HudDriver4:
     jsl Orig_HudP1
     pha
@@ -212,8 +264,17 @@ HudDriver4:
 .done:
     rtl
 .one:
-    lda $0044 : bne .ret
-    lda $0014,y : beq .ret          ; player object absent (info state machine: TODO)
+    lda $0044 : bne .sm
+    lda $0014,y : bne .present
+.sm:                                ; player object absent: info state machine (info4.asm)
+    lda $008C : cmp #$0004 : beq .ret   ; as P2 ($04:D351)
+    phx
+    jsl Orig_StateMachine
+    plx
+    lda $002C,x : bit #$0002 : beq .ret
+    jsl Orig_DrawScore
+    rts
+.present:
     lda $186A : cmp #$0002 : bcs .ret
     lda $002C,x : beq .ret
     bit #$0001 : bne .bar
@@ -243,6 +304,15 @@ HudName:
     tay
     lda $E5A3,y : sta $10           ; name string, $FF-terminated (4 chars)
     jsr HudIndexX
+    phx                             ; P3/P4: box color of this turtle
+    tyx                             ; (Y = character * 2 = turtle * 2)
+    lda.l HudTurtleColor,x
+    plx : phx
+    cpx #$0004 : bne +
+    sta.l !HudColP3
++   cpx #$0006 : bne +
+    sta.l !HudColP4
++   plx
     lda.l HudAttr,x : sta $14
     lda.l HudNamePos,x : tay
     jsl Orig_VramAddr
@@ -378,11 +448,53 @@ HudBar:
     cmp #$0010 : bcc .tile
     jsl Orig_VramClose
     rts
+; ---- game mode change ($00:A606, A = new mode; was STA $70 / LDA #$0001) ----
+; The game-over screen ($0D) and turtle select ($02) load their own BG3 map with the
+; 2-box HUD, so the compact frame is gone until the next stage start (the continue
+; screen $0E keeps the stage's HUD). Turtle select not reached from the continue
+; screen starts a new game: player count back to 2, P3/P4 out (they join on the
+; select screen, select4.asm). From the continue screen of a 3P/4P game: the
+; four-player select for those who continued. A four-player select that nobody
+; extra joined ends in a 2-player game.
+HudModeSet:
+    pha
+    lda.l !Sel4State : cmp #$0003 : bne +
+    lda.l !PlayerMode : and #$FF00 : sta.l !PlayerMode
+    lda #$0000 : sta.l !Sel4State : sta.l !HudFrameOn
++   pla
+    cmp #$000D : beq .off
+    cmp #$0002 : bne .set
+    pha
+    lda $70 : cmp #$000E : bne +
+    lda #$0002 : sta.l !Sel4State   ; after a continue: the original select,
+    lda.l !PlayerMode : and #$00FF : cmp #$0003 : bcc ++
+    lda #$0000 : sta.l !Sel4State   ; or in a 3P/4P game the four-player one
+    inc : sta.l !SelCont            ; for those who continued
+    bra ++
++   lda #$0000
+    sta.l !Sel4State
+    sta.l !SelCont : sta.l !SelSession
+    sta.l !P3_ptr : sta.l !P4_ptr
+    sta.l !P3_info+$0E : sta.l !P4_info+$0E
+    lda.l !PlayerMode : and #$FF00 : sta.l !PlayerMode
+++  pla
+.off:
+    pha
+    lda #$0000 : sta.l !HudFrameOn
+    pla
+.set:
+    sta $70
+    lda #$0001
+    jml $00A60B
+
 Hud4End:
 assert Hud4End <= $210000, "hud4 code overflows bank $20"
 
 ; ---- hooks ----
 org $0081C0 : jsl HudNmi            ; was JSL $008E09
+org $00A606                         ; was STA $70 / LDA #$0001
+    jml HudModeSet
+    nop
 org $04D34D : jsl HudDriver4        ; was JSL $04D39C
 org $04D758                         ; was PHX / TAY / LDA $E5A3,Y
     jml HudName

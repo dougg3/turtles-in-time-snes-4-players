@@ -111,8 +111,10 @@ TileBaseForX:
 ; Carry clear = player (original: X < $04E0, i.e. slots 0/1); P3/P4 slots added.
 IsPlayerSlotX:
     cpx #$04E0 : bcc .done          ; P1/P2 exactly as before
-    cpx #!P3_slot : beq .player
-    cpx #!P4_slot : beq .player
+    cpx #!P3_slot : beq +
+    cpx #!P4_slot : bne .no
++   jsl P34Live : bcs .player       ; P3/P4 (slots 5/7 are other objects otherwise)
+.no:
     sec
     rts
 .player:

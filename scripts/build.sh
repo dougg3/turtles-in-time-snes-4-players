@@ -13,6 +13,7 @@ if grep -nE '^\s*(bra|bcc|bcs|beq|bne|bmi|bpl|bvc|bvs|brl)\s+\$' "$root"/patches
   echo "error: branch with a numeric target (use a label)" >&2; exit 1
 fi
 mkdir -p "$root/build"
+python3 "$root/scripts/gen_select_glyphs.py" "$root/patches/select4_glyphs.asm"
 cp "$clean" "$out"
 chmod u+w "$out"
 "$root/tools/bin/asar" --fix-checksum=on --symbols=wla --symbols-path="$root/build/tmnt4-4p.sym" "$root/patches/main.asm" "$out"
