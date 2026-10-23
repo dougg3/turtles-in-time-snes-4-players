@@ -42,6 +42,12 @@
 --                          bit0 read, bit1 written since the last reset)
 --   peekio <addr> <len>    log S-CPU bus bytes via side-effect-free reads (hex addr, e.g. 4218)
 --   mtap <sub> <btns|->    hold buttons on multitap (port 2) sub-port 0-3 (needs Port2 = Multitap)
+--   inputlog <name>        from now on, log the input sent to ports 0/1 each frame -> <out>/<name>.inputs
+--   replay <file>          from now on, send inputs from an .inputs file (path relative to repo root),
+--                          one line per frame: "<p0 mask> <p1 mask>" (hex, bit order = ALL_BUTTONS)
+--   framehash <name> <every> <frames>
+--                          every N frames write "<frame> <OAM+CGRAM crc> <wram $0000-$1FFF crc>" -> <out>/<name>.hash
+--                          (screen buffer reads are not frame-exact in Mesen, so PPU memories are hashed instead)
 --   bg <command ...>       run a recorder (trace/watch/oamrec/cpurec/memrec) without waiting for it
 --   end                    stop emulator
 
@@ -231,6 +237,7 @@ local cpurec
 local memrec
 local hooks
 local mtapHeld = {}
+local inputLog, replayLines, replayPos, fhash
 local dmarec
 
 local NMI_FULL_RTI = 0x008205 -- RTI reached only by the full (non-reentrant) NMI path
@@ -388,6 +395,15 @@ local function step()
       for i = 0, n - 1 do b[#b + 1] = string.format("%02X", emu.read(a + i, emu.memType.snesDebug)) end
       say("frame %d: peekio %06X: %s", frame, a, table.concat(b, " "))
       goto continue
+    elseif op == "inputlog" then
+      inputLog = assert(io.open(out .. "/" .. c[2] .. ".inputs", "w"))
+    elseif op == "replay" then
+      replayLines, replayPos = {}, 1
+      for l in io.lines(c[2]:sub(1, 1) == "/" and c[2] or (root .. "/" .. c[2])) do replayLines[#replayLines + 1] = l end
+    elseif op == "framehash" then
+      fhash = { file = assert(io.open(out .. "/" .. c[2] .. ".hash", "w")), every = tonumber(c[3]),
+                untilFrame = frame + tonumber(c[4]) }
+      waitFor(tonumber(c[4]))
     elseif op == "mtap" then
       mtapHeld[tonumber(c[2])] = parseButtons(c[3])
     elseif op == "god" then
@@ -449,8 +465,30 @@ emu.addEventCallback(function()
   if next(aiPorts) then updateProgress() end
   -- Mesen bug (LuaApi::SetInput pads to 3 args, then lua_settop(4)): the 2nd
   -- argument is ignored and the effective signature is (input, _, port, subport).
+  local sent = {}
   for port = 0, 1 do
-    emu.setInput(aiPorts[port] and aiInput(port) or held[port], 0, port, 0)
+    local t = aiPorts[port] and aiInput(port) or held[port]
+    if replayLines then
+      local l = replayLines[replayPos]
+      if l then
+        local m0, m1 = l:match("(%x+) (%x+)")
+        local mask = tonumber(port == 0 and m0 or m1, 16)
+        t = {}
+        for i, b in ipairs(ALL_BUTTONS) do t[b] = (mask >> (i - 1)) & 1 == 1 end
+      end
+    end
+    sent[port] = t
+    emu.setInput(t, 0, port, 0)
+  end
+  if replayLines then replayPos = replayPos + 1 end
+  if inputLog then
+    local m = {}
+    for port = 0, 1 do
+      local v = 0
+      for i, b in ipairs(ALL_BUTTONS) do if sent[port][b] then v = v | (1 << (i - 1)) end end
+      m[#m + 1] = string.format("%03X", v)
+    end
+    inputLog:write(table.concat(m, " "), "\n")
   end
   for sub, t in pairs(mtapHeld) do emu.setInput(t, 0, 1, sub) end
 end, emu.eventType.inputPolled)
@@ -480,6 +518,22 @@ emu.addEventCallback(function()
     writeFile(hooks.name .. ".hooks", table.concat(hooks.lines, "\n") .. "\n")
     say("hooks %s: %d hits", hooks.name, #hooks.lines)
     hooks = nil
+  end
+  if fhash then
+    if frame % fhash.every == 0 then
+      local function crc(tbl, n)
+        local h = 0x811C9DC5
+        for i = 1, n do h = ((h ~ tbl[i]) * 0x01000193) & 0xFFFFFFFF end
+        return h
+      end
+      local scr = {}
+      for a = 0, 543 do scr[#scr + 1] = emu.read(a, emu.memType.snesSpriteRam) end
+      for a = 0, 511 do scr[#scr + 1] = emu.read(a, emu.memType.snesCgRam) end
+      local w = {}
+      for a = 0, 0x1FFF do w[a + 1] = emu.read(a, emu.memType.snesWorkRam) end
+      fhash.file:write(string.format("%d %08X %08X\n", frame, crc(scr, #scr), crc(w, 0x2000)))
+    end
+    if frame >= fhash.untilFrame then fhash.file:close(); fhash = nil end
   end
   if dmarec and frame >= dmarec.untilFrame then
     for _, r in ipairs(dmarec.refs) do emu.removeMemoryCallback(r[1], r[2], r[3], r[4]) end
