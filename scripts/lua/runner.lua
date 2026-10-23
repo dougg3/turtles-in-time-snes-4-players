@@ -29,7 +29,7 @@
 --   memrec <name> <start> <len> <frames>
 --                          record WRAM[start..start+len) every frame (hex start/len) -> <out>/<name>.memrec
 --   hooks <name> <frames> <addr> [addr...]
---                          log "<frame> <addr> <master clock>" whenever a listed address executes -> <out>/<name>.hooks
+--                          log "<frame> <addr> <master clock> X= Y= A=" whenever a listed address executes -> <out>/<name>.hooks
 --   poke <addr> <byte> [byte...]  write WRAM bytes (hex) - experiment only, never touches ROM
 --   ai <player> <on|off>   RAM-driven bot for that player (0-1 = ports; 2-3 = P3/P4 via multitap): approach nearest enemy (slots 11-19),
 --                          match depth, attack; walk right when no enemies. Overrides hold/tap.
@@ -380,7 +380,9 @@ local function step()
         local a = tonumber(c[i]:gsub(":", ""), 16)
         addrs[#addrs + 1] = a
         refs[#refs + 1] = emu.addMemoryCallback(function()
-          lines[#lines + 1] = string.format("%d %06X %d", frame, a, emu.getMasterClock())
+          local st = emu.getState()
+          lines[#lines + 1] = string.format("%d %06X %d X=%04X Y=%04X A=%04X", frame, a, emu.getMasterClock(),
+            st["cpu.x"] or 0, st["cpu.y"] or 0, st["cpu.a"] or 0)
         end, emu.callbackType.exec, a)
       end
       hooks = { name = c[2], untilFrame = frame + tonumber(c[3]), lines = lines, refs = refs, addrs = addrs }

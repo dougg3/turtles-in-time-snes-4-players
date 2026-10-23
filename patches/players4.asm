@@ -44,6 +44,7 @@ UpdatePlayers4:
 
 ; ---- spawn at stage start: original P1/P2, then P3/P4 (same as $04:AF1A-$AF6A) ----
 SpawnPlayers4:
+    jsl HudQueueFrame       ; 3P/4P: compact HUD frame first (hud4.asm), contents follow
     jsl Orig_SpawnPlayers
     lda !PlayerMode : and #$00FF : cmp #$0003 : bcc .done
     ; first time in 3P/4P: assign pointers and initialize info blocks (as $04:977F)
@@ -69,6 +70,7 @@ SpawnPlayers4:
 .spawn:                     ; X = object, A = character, Y = info block
     phy
     sta $14,x
+    pha : lsr : dec : sta $001A,y : pla ; info +$1A = HUD name index (Leo 0 ... Raph 3)
     jsl Orig_InitHealth
     stz $0016,x
     stz $0000,x
