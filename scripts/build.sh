@@ -15,6 +15,12 @@ fi
 mkdir -p "$root/build"
 cp "$clean" "$out"
 chmod u+w "$out"
-"$root/tools/bin/asar" --fix-checksum=on "$root/patches/main.asm" "$out"
+"$root/tools/bin/asar" --fix-checksum=on --symbols=wla --symbols-path="$root/build/tmnt4-4p.sym" "$root/patches/main.asm" "$out"
 "$root/tools/bin/flips" --create --bps "$clean" "$out" "$root/build/tmnt4-4p.bps" >/dev/null || true
 sha1sum "$out"
+# Patched bytes must not contain an original branch/loop target (needs recorded CDL files).
+cdls=$(ls "$root"/build/runs/*/*.cdl 2>/dev/null || true)
+if [ -n "$cdls" ]; then
+  python3 "$root/scripts/check_hooks.py" "$clean" "$out" $cdls --ignore 00:C15F > "$root/build/check_hooks.txt" \
+    || { cat "$root/build/check_hooks.txt" >&2; echo "error: patch overwrites a branch target" >&2; exit 1; }
+fi

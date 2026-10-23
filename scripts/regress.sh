@@ -16,6 +16,11 @@ rm -rf "$dest"; mkdir -p "$dest"
 # WRAM ranges that patches deliberately repurpose (input slots, new variables);
 # excluded from the WRAM hash for both baseline and candidate.
 export TMNT_HASH_EXCLUDE="$(tr -d ' \n' < "$root/tests/hash_exclude.txt")"
+# Extra invisible scanlines before NMI (more CPU per frame) for BOTH baseline and
+# candidate: patches change CPU time, and in stages that run at the CPU limit that
+# alone changes which frames lag and therefore the game's course.
+# With spare CPU, comparisons stay strict. REGRESS_REALTIME=1 disables this.
+if [ "${REGRESS_REALTIME:-0}" != 1 ]; then export MESEN_ARGS="--Snes.PpuExtraScanlinesBeforeNmi=400"; fi
 # Relocated state (orig:new:len) is read from its new address in candidate runs only.
 if [ "${1:-}" != baseline ]; then export TMNT_HASH_MAP="$(tr -d ' \n' < "$root/tests/hash_map.txt")"; fi
 ls "$root"/tests/scenarios/*.txt | xargs -P3 -I{} sh -c \

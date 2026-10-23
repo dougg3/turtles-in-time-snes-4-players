@@ -7,20 +7,7 @@
 ; used in a 1P/2P game. Every helper also reproduces the CPU flags the original
 ; sequence left behind (see each one).
 
-; ---- P3/P4 assignments ----
-!P1_slot   = $0400
-!P2_slot   = $0470
-!P3_slot   = $0630      ; slot 5
-!P4_slot   = $0710      ; slot 7
-!P1_compB  = $05C0
-!P2_compB  = $06A0
-!P3_compB  = $1040      ; slot 28 (freed by the 3P/4P enemy cap)
-!P4_compB  = $1430      ; slot 37
-!P1_info   = $1A80
-!P2_info   = $1AC0
-!P3_info   = $1B20
-!P4_info   = $1B60
-
+; Slot/info addresses: ram.asm.
 org $00FA00
 assert JoypadEnd <= $00FA00, "input code runs into the player helpers"
 
@@ -107,6 +94,95 @@ IndexAfromY:
     lda #$0006 : cpy #!P4_slot : beq .done
     lda #$0002
 .done: rtl
+
+; Sprite tile base / palette for a player object ($00:921A, 8-bit A, 16-bit X):
+; original: $00 for P1, $30 for anything else (= tiles $030+ and palette 1).
+; Proof of concept: P3 shares P1's VRAM region and palette, P4 shares P2's (the
+; extension sprite memory gives them their own).
+TileBaseForX:
+    lda #$00 : cpx #!P1_slot : beq .done
+    cpx #!P3_slot : beq .done
+    lda #$30
+.done:
+    rtl
+
+; "Is object X a player's main slot?" for the OAM builder ($00:92FB), called with
+; JSR (same 3 bytes as the original CPX #$04E0, so the BCC after it is kept).
+; Carry clear = player (original: X < $04E0, i.e. slots 0/1); P3/P4 slots added.
+IsPlayerSlotX:
+    cpx #$04E0 : bcc .done          ; P1/P2 exactly as before
+    cpx #!P3_slot : beq .player
+    cpx #!P4_slot : beq .player
+    sec
+    rts
+.player:
+    clc
+.done:
+    rts
+
+; ---- companion A (slots 2/3 for P1/P2; P3/P4 outside the pool, ram.asm) ----
+
+; Y = owner of companion-A object X (default P2). Replaces at $00:B6D0:
+; LDY #$0400 / CPX #$04E0 / BEQ / LDY #$0470
+OwnerOfCompanionA:
+    ldy #!P1_slot : cpx #$04E0 : beq .done
+    ldy #!P3_slot : cpx #!P3_compA : beq .done
+    ldy #!P4_slot : cpx #!P4_compA : beq .done
+    ldy #!P2_slot
+.done:
+    rtl
+
+; Z set if companion-A object X should use P1-side data (P1, and P3 which shares
+; P1's palette/tiles in the proof of concept). Same 3 bytes as CPX #$04E0 (JSR),
+; registers preserved, the BEQ after it is kept.
+IsP1SideCompanionA:
+    cpx #$04E0 : beq .done
+    cpx #!P3_compA
+.done:
+    rts
+
+; ---- companion B = the player's attack/hit object (slots 4/6; P3/P4: ram.asm) ----
+; Z set if companion-B object X uses P1-side data (P1, and P3 in the proof of
+; concept). Same 3 bytes as CPX #$05C0 (JSR); BEQ after it kept.
+IsP1SideCompanionB:
+    cpx #!P1_compB : beq .done
+    cpx #!P3_compB
+.done:
+    rts
+
+; $00:C625: keep X if it is any player's companion B, else X = P2's ($06A0).
+; Replaces CPX #$05C0 / BEQ / LDX #$06A0.
+KeepCompanionB:
+    cpx #!P1_compB : beq .done
+    cpx #!P3_compB : beq .done
+    cpx #!P4_compB : beq .done
+    ldx #!P2_compB
+.done:
+    rtl
+
+; Y = player index x2 for companion-B object A; carry set if A is not one.
+; Replaces at $04:858E: CMP #$05C0 / BEQ / CMP #$06A0 / BNE / INY / INY
+IndexYfromCompanionB_A:
+    ldy #$0000 : cmp #!P1_compB : beq .yes
+    ldy #$0002 : cmp #!P2_compB : beq .yes
+    ldy #$0004 : cmp #!P3_compB : beq .yes
+    ldy #$0006 : cmp #!P4_compB : beq .yes
+    ldy #$0000
+    sec
+    rtl
+.yes:
+    clc
+    rtl
+
+; X = stat block credited for a hit by companion-B object A ($03:B49A/B8D9).
+; Original: $1911 if A == $05C0 else $191B. Proof of concept: P3 -> P1's, P4 -> P2's
+; (P3/P4 get their own blocks with the HUD work).
+StatBlockForCompanionB_A:
+    ldx #$1911 : cmp #!P1_compB : beq .done
+    cmp #!P3_compB : beq .done
+    ldx #$191B
+.done:
+    rtl
 PlayerHelpersEnd:
 assert PlayerHelpersEnd <= $00FFB0, "player helpers overflow bank $00 padding"
 
@@ -198,3 +274,46 @@ org $03FA5A                 ; same -> STA $32,X
 org $04844C                 ; TDC / CPX / BEQ / INC / INC -> STA $00
     jsl IndexAfromX
     bra Orig_8454
+
+; ---- OAM builder: per-player sprite tile base / palette ($00:921A) ----
+Orig_9223 = $009223
+org $00921A                 ; LDA #$00 / CPX #$0400 / BEQ / LDA #$30 -> STA $D6
+    jsl TileBaseForX
+    bra Orig_9223
+
+; ---- OAM builder: draw P3/P4 with the player path ($00:92FB CPX #$04E0 / BCC) ----
+org $0092FB
+    jsr IsPlayerSlotX
+
+; ---- companion A: owner and per-player data ($00:B6D0, B959, B974, C5E8, C64C) ----
+Orig_B6DB = $00B6DB
+org $00B6D0                 ; LDY #$0400 / CPX #$04E0 / BEQ / LDY #$0470 -> LDA $0030,Y
+    jsl OwnerOfCompanionA
+    bra Orig_B6DB
+org $00B959 : jsr IsP1SideCompanionA       ; was CPX #$04E0 (draw data / attributes)
+org $00B974 : jsr IsP1SideCompanionA       ; was CPX #$04E0
+org $00C5E8 : jsr IsP1SideCompanionA       ; was CPX #$04E0
+org $00C64C : jsr IsP1SideCompanionA       ; was CPX #$04E0
+
+; ---- companion B (attack object): data side, slot keep, attacker index, hit credit ----
+org $00C5BD : jsr IsP1SideCompanionB       ; was CPX #$05C0
+org $00C610 : jsr IsP1SideCompanionB       ; was CPX #$05C0
+org $00C676 : jsr IsP1SideCompanionB       ; was CPX #$05C0
+Orig_C62D = $00C62D
+org $00C625                                ; CPX #$05C0 / BEQ / LDX #$06A0 -> JML $008BCD
+    jsl KeepCompanionB
+    bra Orig_C62D
+Orig_859A = $04859A
+Orig_859F = $04859F
+org $04858E                                ; CMP #$05C0 / BEQ / CMP #$06A0 / BNE / INY / INY
+    jsl IndexYfromCompanionB_A
+    bcs Orig_859F
+    bra Orig_859A
+Orig_B4A2 = $03B4A2
+Orig_B8E1 = $03B8E1
+org $03B497                                ; LDX #$1911 / CMP #$05C0 / BEQ / LDX #$191B -> INC $00,X
+    jsl StatBlockForCompanionB_A
+    bra Orig_B4A2
+org $03B8D6                                ; same -> INC $02,X
+    jsl StatBlockForCompanionB_A
+    bra Orig_B8E1

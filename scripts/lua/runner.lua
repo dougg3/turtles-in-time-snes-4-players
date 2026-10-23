@@ -14,6 +14,7 @@
 --   oam <name>             544-byte OAM dump -> <out>/<name>.oam
 --   cgram <name>           512-byte CGRAM dump -> <out>/<name>.cgram
 --   vram <name>            64 KiB VRAM dump -> <out>/<name>.vram
+--   ppu <name>             all "ppu.*" values of emu.getState() -> <out>/<name>.ppu
 --   peek <addr> <len>      log WRAM bytes (addr is WRAM offset, hex) to run.log
 --   watch <r|w> <start> <end> <frames>
 --                          log unique (instruction address, WRAM offset, value) for reads/writes
@@ -30,7 +31,7 @@
 --   hooks <name> <frames> <addr> [addr...]
 --                          log "<frame> <addr> <master clock>" whenever a listed address executes -> <out>/<name>.hooks
 --   poke <addr> <byte> [byte...]  write WRAM bytes (hex) - experiment only, never touches ROM
---   ai <port> <on|off>     RAM-driven bot for that player: approach nearest enemy (slots 11-19),
+--   ai <player> <on|off>   RAM-driven bot for that player (0-1 = ports; 2-3 = P3/P4 via multitap): approach nearest enemy (slots 11-19),
 --                          match depth, attack; walk right when no enemies. Overrides hold/tap.
 --   god <on|off>           measurement aid: keep each player's health (object +$4A) at the highest
 --                          value seen, so players never die. Hits/knockdowns still happen.
@@ -105,7 +106,9 @@ held = { [0] = parseButtons("-"), [1] = parseButtons("-") }
 -- $0400/$0470, X at +$08 (screen), depth Y at +$0C, enemies in slots 11-19
 -- ($08D0 + n*$70) with non-zero type at +$14.
 local aiPorts = {}
-local PLAYER_SLOT = { [0] = 0x0400, [1] = 0x0470 }
+-- players 2/3 = P3/P4 of the 4-player patch (slots 5/7), driven through multitap
+-- sub-ports 1/2 (Port2 must be a Multitap; P2 is then sub-port 0)
+local PLAYER_SLOT = { [0] = 0x0400, [1] = 0x0470, [2] = 0x0630, [3] = 0x0710 }
 
 local function rd16(a)
   return emu.read(a, emu.memType.snesWorkRam) | (emu.read(a + 1, emu.memType.snesWorkRam) << 8)
@@ -115,9 +118,9 @@ end
 -- in stages 0/1). Give up on a slot after STUCK_FRAMES of continuous targeting and
 -- ignore it for IGNORE_FRAMES.
 local STUCK_FRAMES, IGNORE_FRAMES = 360, 1800
-local aiTarget = { [0] = {}, [1] = {} }
+local aiTarget = { [0] = {}, [1] = {}, [2] = {}, [3] = {} }
 local aiIgnore = {}
-local playerGone = { [0] = 0, [1] = 0 }
+local playerGone = { [0] = 0, [1] = 0, [2] = 0, [3] = 0 }
 local godMode = false
 local godMax = {}
 
@@ -339,6 +342,13 @@ local function step()
       dumpMem(emu.memType.snesVideoRam, 0x10000, c[2] .. ".vram")
     elseif op == "oam" then
       dumpMem(emu.memType.snesSpriteRam, 544, c[2] .. ".oam")
+    elseif op == "ppu" then
+      local st, keys = emu.getState(), {}
+      for k in pairs(st) do if k:sub(1, 4) == "ppu." then keys[#keys + 1] = k end end
+      table.sort(keys)
+      local f = io.open(out .. "/" .. c[2] .. ".ppu", "w")
+      for _, k in ipairs(keys) do f:write(k, "=", tostring(st[k]), "\n") end
+      f:close()
     elseif op == "peek" then
       local a, n = tonumber(c[2], 16), tonumber(c[3])
       local b = {}
@@ -500,6 +510,10 @@ emu.addEventCallback(function()
     inputLog:write(table.concat(m, " "), "\n")
   end
   for sub, t in pairs(mtapHeld) do emu.setInput(t, 0, 1, sub) end
+  -- AI for P3/P4 (multitap pads 3/4 = port 1 sub-ports 1/2)
+  for p = 2, 3 do
+    if aiPorts[p] then emu.setInput(aiInput(p), 0, 1, p - 1) end
+  end
 end, emu.eventType.inputPolled)
 
 emu.addEventCallback(function()
@@ -510,7 +524,7 @@ emu.addEventCallback(function()
   end
   if godMode then
     -- Real health is player object +$4A ($00:C8AF only copies a scaled value to the HUD).
-    for _, slot in ipairs({ 0x0400, 0x0470 }) do
+    for _, slot in ipairs({ 0x0400, 0x0470, 0x0630, 0x0710 }) do
       local hp = rd16(slot + 0x4A)
       godMax[slot] = math.max(godMax[slot] or 0, hp)
       if hp > 0 and hp < godMax[slot] then

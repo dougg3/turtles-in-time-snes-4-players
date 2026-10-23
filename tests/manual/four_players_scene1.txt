@@ -1,0 +1,38 @@
+# Manual 4-player proof-of-concept run (needs Mesen Port2 = Multitap with sub-ports A-D).
+# Starts from build/states/charsel_2p.mss (made from the clean ROM), sets 4P mode,
+# P3 = Don (6), P4 = Raph (8), and drives P3/P4 from multitap pads 3/4.
+load build/states/charsel_2p.mss
+wait 5
+poke 1A78 04
+poke D4 06 00
+poke D8 08 00
+tap 0 b 4
+wait 10
+tap 1 b 4
+wait 200
+tap 0 start 4
+wait 60
+tap 0 start 4
+wait 900
+shot s0
+peek 100 6
+peek 630 32
+peek 710 32
+peek 1B20 48
+mtap 1 right
+mtap 2 right
+hold 0 right
+wait 60
+shot s1
+mtap 1 y
+mtap 2 down,y
+wait 60
+shot s2
+mtap 1 -
+mtap 2 -
+hold 0 -
+wait 120
+shot s3
+peek 630 32
+peek 710 32
+end
