@@ -546,8 +546,19 @@ emu.addEventCallback(function()
           for a = tonumber(a0, 16), tonumber(a1, 16) do fhash.excl[a] = true end
         end
       end
+      -- TMNT_HASH_MAP ("19DC:0110:4", hex) makes the hash read relocated data from
+      -- its new address in place of the original one, so moved state is still compared.
+      -- The new addresses themselves must be in TMNT_HASH_EXCLUDE (unused in the original).
+      if not fhash.map then
+        fhash.map = {}
+        for o, n, len in (os.getenv("TMNT_HASH_MAP") or ""):gmatch("(%x+):(%x+):(%x+)") do
+          for i = 0, tonumber(len, 16) - 1 do fhash.map[tonumber(o, 16) + i] = tonumber(n, 16) + i end
+        end
+      end
       local w = {}
-      for a = 0, 0x1FFF do w[a + 1] = fhash.excl[a] and 0 or emu.read(a, emu.memType.snesWorkRam) end
+      for a = 0, 0x1FFF do
+        w[a + 1] = fhash.excl[a] and 0 or emu.read(fhash.map[a] or a, emu.memType.snesWorkRam)
+      end
       fhash.file:write(string.format("%d %08X %08X\n", frame, crc(scr, #scr), crc(w, 0x2000)))
     end
     if frame >= fhash.untilFrame then fhash.file:close(); fhash = nil end

@@ -16,6 +16,8 @@ rm -rf "$dest"; mkdir -p "$dest"
 # WRAM ranges that patches deliberately repurpose (input slots, new variables);
 # excluded from the WRAM hash for both baseline and candidate.
 export TMNT_HASH_EXCLUDE="$(tr -d ' \n' < "$root/tests/hash_exclude.txt")"
+# Relocated state (orig:new:len) is read from its new address in candidate runs only.
+if [ "${1:-}" != baseline ]; then export TMNT_HASH_MAP="$(tr -d ' \n' < "$root/tests/hash_map.txt")"; fi
 ls "$root"/tests/scenarios/*.txt | xargs -P3 -I{} sh -c \
   'n=$(basename {} .txt); MESEN_TIMEOUT=900 "'"$root"'/scripts/mesen-run.sh" {} "'"$dest"'/$n" "'"$rom"'" > /dev/null 2>&1'
 [ "${1:-}" = baseline ] && { echo "baseline written to $dest"; exit 0; }

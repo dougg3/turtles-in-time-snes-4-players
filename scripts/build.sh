@@ -7,6 +7,11 @@ out="$root/build/tmnt4-4p.sfc"
 expected_sha1=4f8fc0f45023e0339e501054b253c33f479a001a
 
 echo "$expected_sha1  $clean" | sha1sum -c --quiet
+# Asar assembles a relative branch to a NUMBER (e.g. `bra $ADD0`) as a raw operand
+# byte, not as a target address. Targets must be labels.
+if grep -nE '^\s*(bra|bcc|bcs|beq|bne|bmi|bpl|bvc|bvs|brl)\s+\$' "$root"/patches/*.asm; then
+  echo "error: branch with a numeric target (use a label)" >&2; exit 1
+fi
 mkdir -p "$root/build"
 cp "$clean" "$out"
 chmod u+w "$out"

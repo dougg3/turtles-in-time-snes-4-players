@@ -3,3 +3,5 @@ lorom
 
 incsrc "player_tables.asm"
 incsrc "input4.asm"
+incsrc "players.asm"
+incsrc "player_word_array.asm"

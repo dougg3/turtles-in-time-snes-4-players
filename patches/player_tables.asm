@@ -12,7 +12,8 @@ org $01FE20
 PlayerCompanionA:   dw $04E0, $0550, $0000, $0000   ; was $01:95D5 (slots 2/3)
 PlayerCompanionB:   dw $05C0, $06A0, $0000, $0000   ; was $01:96C3 (slots 4/6)
 PlayerInfoBlock:    dw $1A80, $1AC0, $0000, $0000   ; was $01:9CF7
-PlayerWord19DC:     dw $19DC, $19DE, $0000, $0000   ; was $01:9D77 (meaning unknown)
+PlayerWord19DC:     dw $0110, $0112, $0114, $0116   ; was $01:9D77: addresses of the per-player
+                                                    ; word array, relocated $19DC -> $0110 (player_word_array.asm)
 PlayerBlock1F40:    dw $1F40, $1F50, $0000, $0000   ; was $01:9DB7 (meaning unknown)
 PlayerPtr8D6B:      dw $8D6B, $8D6F, $0000, $0000   ; was $01:9DBB (meaning unknown)
 PlayerCompanionB2:  dw $05C0, $06A0, $0000, $0000   ; was $01:9E0F
@@ -21,6 +22,9 @@ PlayerCompanionB3:  dw $05C0, $06A0, $0000, $0000   ; was $01:9FDF
 PlayerInfoBlock2:   dw $1A80, $1AC0, $0000, $0000   ; was $01:9FEB
 PlayerVramBody:     dw $6000, $6300, $0000, $0000   ; was $01:C296
 PlayerVramPiece2:   dw $0000, $0300, $0000, $0000   ; was $01:C29A (added to $6200)
+PlayerSpawnOffsetX: dw $FFE8, $0018, $FFD0, $0030   ; was $01:9F19: start X offset; P3/P4 -$30/+$30
+PlayerDA50:         dw $0000, $0002, $0000, $0002   ; was $01:DA50 (meaning unknown; read at $04:AD5C
+                                                    ; with DB presumed $01 — not observed). P3/P4 copy P1/P2.
 PlayerTablesEnd:
 assert PlayerTablesEnd <= $01FFC0, "player tables overflow bank $01 padding"
 
@@ -53,3 +57,7 @@ endmacro
 %repoint($00D687, PlayerCompanionB2)
 %repoint($04939B, PlayerVramBody)
 %repoint($0493BC, PlayerVramPiece2)
+
+%repoint($00DF02, PlayerSpawnOffsetX)
+%repoint($00DF0B, PlayerSpawnOffsetX)
+%repoint($04AD5C, PlayerDA50)
