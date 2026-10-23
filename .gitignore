@@ -1,0 +1,15 @@
+# Copyrighted ROM data never goes in the repo
+*.sfc
+*.smc
+*.bps
+*.mss
+*.mmo
+/original
+/build
+
+# Third-party tools (scripts/setup.sh)
+/tools
+
+# Editor/Python droppings
+*.swp
+__pycache__/
