@@ -296,24 +296,9 @@ CamCalcA:                   ; replaces LDA $0408
     jsr CamCalc
     lda !CamA
     rts
-CamCalc:
-    lda $0408 : sta !CamA
-    lda $0478 : sta !CamB
-    lda !PlayerMode : and #$00FF : cmp #$0003 : bcc .done
-    lda !CamB : cmp !CamA : bcc +   ; order the two so CamA >= CamB
-    pha : lda !CamA : sta !CamB : pla : sta !CamA
-+   ldy !P3_ptr : jsr .take
-    ldy !P4_ptr : jsr .take
-.done:
+CamCalc:                    ; (scripts4.asm CamCalcFar: present players only)
+    jsl CamCalcFar
     rts
-.take:                      ; widen [CamB, CamA] with player Y's X (Y = 0: absent)
-    cpy #$0000 : beq +
-    lda $0008,y
-    cmp !CamA : bcc ++
-    sta !CamA
-++  cmp !CamB : bcs +
-    sta !CamB
-+   rts
 CameraEnd:
 assert CameraEnd <= $04FFFF, "camera helper overflows bank $04"
 

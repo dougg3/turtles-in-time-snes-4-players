@@ -43,15 +43,21 @@
 !P4_ptr          = $1A76
 !PlayerMode      = $1A78   ; 0 = original game, 3 = three players, 4 = four players
 
-; ---- variables: $1BA0-$1BBF (free; after P4's info block) ----
+; ---- variables: $1BA0-$1BBF (after P4's info block). Not entirely free: the attract
+; demo's input playback uses $1BA8-$1BB3 ($00:E138; not run in 3P/4P games) and the
+; stage start clears $1BA8 ($00:AF02: resets one message timer, harmless); the
+; Scene 9 boss uses $1BB8/$1BBA ($04:E58B) ----
 !HudMsgPhase     = $1BA0   ; 4 words: compact HUD message alternation (PRESS/START, GAME/OVER)
 !HudMsgTimer     = $1BA8   ; 4 words: GAME/OVER alternation timer
 !InfoTmp         = $1BB0   ; scratch for info4.asm
 !InfoCnt         = $1BB2
 !CharCand        = $1BB4   ; CharFree4: candidate turtle
 !CharOwn         = $1BB6   ; CharFree4: own player index * 2
-!HudColP3        = $1BB8   ; P3 box color 1 (by turtle, as the original does for P1/P2)
-!HudColP4        = $1BBA
+; ($1BB8/$1BBA are not free: the Scene 9 boss uses them, $04:E58B)
+!HudColP3        = $1D4A   ; P3 box color 1 (by turtle, as the original does for P1/P2)
+!HudColP4        = $1D4C
+!EndPlayers      = $1D58   ; P3/P4 (bits 2/3) of the game that just ended (final screen)
+!FinTmp          = $1D5A
 
 ; ---- variables: $1C80-$1CFF (free) ----
 !HudFrameOn      = $1C80   ; non-zero: the compact 4-box frame is on screen

@@ -28,6 +28,13 @@
 !PPPalKey   = $1CE6             ; palettes made for: $D0, $D2, P3/P4 turtles (6 bytes)
 !PPPalOK    = $1CEC
 !PPBank     = $1CEE             ; PPAdd: bank of the source
+!PPIceP3    = $1D46             ; non-zero: P3 frozen (ice palette; scripts4 ScrFreeze4)
+!PPIceP4    = $1D48
+!PPShift1   = $1D4E             ; PPShift: shift seen on P1's palette
+!PPShiftHud = $1D50             ;          screen fade from the HUD's white
+!PPRec      = $1D52             ; PPLiveShift: ROM record of the turtle
+!PPLive     = $1D54             ;              its live palette (bank $7E)
+!PPCmp      = $1D56
 !PPListN    = $1CF0             ; bytes used in !PPList
 !PPList     = $7E7F00           ; uploads for the next NMI: source (3), port address
 !PPListMax  = 9*7               ; (2), bytes (2); 9 entries
@@ -36,7 +43,7 @@
 !PPStart    = $1CC2             ; first OAM entry of the P3/P4 object being drawn
 !PPOwner    = $1CC4             ; its slot
 !PPRet      = $1CC6             ; 3 bytes: where the object's draw routine returns to
-!PPK        = $1CCA             ; fade amount
+!PPK        = $1CCA             ; signed color shift for palettes 8/9 (PPShift)
 !PPTmp      = $1CCC
 !PPI        = $1CCE
 !PPOff      = $1CD0             ; palettes: byte offset of P3 (0) / P4 ($20)
@@ -55,9 +62,11 @@
 
 ; extra scanlines per frame in 3P/4P play ($21C5/$21C6). Without them the
 ; frame logic (run in the NMI) sometimes spills into the next picture's top lines
-; and the HUD shows half-updated settings.
-!PPExtraCpu     = 192           ; before NMI: CPU time (4P lag <= 2P lag in all scenes)
-!PPExtraVblank  = 16            ; after NMI: vblank (DMA) time
+; and the HUD shows half-updated settings. All of them go after NMI: the sound
+; CPU is stopped during extra lines, and the sound uploads run in the idle loop
+; ($00:8154), which must get its time in normal lines.
+!PPExtraCpu     = 0             ; before NMI
+!PPExtraVblank  = 208           ; after NMI: frame logic and DMA (4P lag <= 2P lag)
 
 TurtlePalettes = $0992F9        ; 32 bytes per turtle: 4-byte header, colors 2-14;
                                 ; second set at +$A0 when $1FF0 is set
@@ -111,10 +120,12 @@ PPFrame:                            ; (A 16-bit)
     ldx #$003E
 -   sta.l $7E0000+!PPAttr,x
     dex : dex : bpl -
-    jsr PPPalCheck : bcc +          ; palettes 8/9 only when their sources changed
+    ; palettes 8/9: rebuilt when their sources changed, sent every frame (64 bytes,
+    ; like the attributes) so a lost upload can't leave P3/P4 black
+    jsr PPPalCheck : bcc +
     jsr PPPalettes
-    lda.w #!PPPal : ldy #$4400 : ldx #$0040 : jsr PPQueue
-+   lda.w #!PPAttr : ldy #$4300 : ldx #$0040 : jsr PPQueue
++   lda.w #!PPPal : ldy #$4400 : ldx #$0040 : jsr PPQueue
+    lda.w #!PPAttr : ldy #$4300 : ldx #$0040 : jsr PPQueue
     bra .done
 .off:
     lda #$0000 : sta.l !PPPalOK     ; make palettes 8/9 again when switched on
@@ -135,7 +146,7 @@ PPPalCheck:
     lda.l !PPPalOK : beq .changed
     lda $D0 : cmp.l !PPPalKey : bne .changed
     lda $D2 : eor.w $1FF0 : cmp.l !PPPalKey+2 : bne .changed
-    lda.w !P3_info+$1A : xba : ora.w !P4_info+$1A : cmp.l !PPPalKey+4 : bne .changed
+    jsr PPOwnKey : cmp.l !PPPalKey+4 : bne .changed
     lda $42 : clc : adc #$0100 : sta.l !PPBufA
     ldy #$003E
 -   tya : clc : adc.l !PPBufA : tax
@@ -148,7 +159,7 @@ PPPalCheck:
 .changed:
     lda $D0 : sta.l !PPPalKey
     lda $D2 : eor.w $1FF0 : sta.l !PPPalKey+2
-    lda.w !P3_info+$1A : xba : ora.w !P4_info+$1A : sta.l !PPPalKey+4
+    jsr PPOwnKey : sta.l !PPPalKey+4
     lda $42 : clc : adc #$0100 : sta.l !PPBufA
     ldy #$003E
 -   tya : clc : adc.l !PPBufA : tax
@@ -256,10 +267,13 @@ PPFlush:
     rtl
 
 ; ---- palettes 8/9 into !PPPal ----
-; Color j of P3 (P4): the game's palette 0 (1) color j, except where P1's (P2's)
-; turtle and P3's (P4's) turtle differ in ROM: P3's (P4's) color faded by K, the
-; amount the game has taken off (red of color 14: ROM minus buffer).
+; Colors 2-14 of P3 (P4): P3's (P4's) own turtle colors from ROM, faded by K, the
+; amount the game's screen fade has taken off (31 - red of the HUD's white, as
+; HudNmi). Colors 0, 1, 15 (0 in every turtle palette in ROM): the game's palette
+; 0 (1). Built only from ROM and the screen fade, so effects on P1's/P2's palette
+; (freeze, flashes) no longer show on P3/P4.
 PPPalettes:
+    jsr PPShift
     lda #$0000 : sta.l !PPOff
     lda $D0 : ldy.w #!P3_info : jsr .one
     lda #$0020 : sta.l !PPOff
@@ -267,28 +281,19 @@ PPPalettes:
     rts
 .one:                               ; A = character of the base turtle, Y = info
     lsr : dec : and #$0003 : asl #5 : sta.l !PPBase
-    lda $001A,y : and #$0003 : asl #5 : sta.l !PPOwn
+    jsr PPOwnIdx : asl #5 : sta.l !PPOwn
     lda.w $1FF0 : beq +             ; second palette set (scripts $01:8B23-, as the
-    lda.l !PPBase : clc : adc #$00A0 : sta.l !PPBase   ; game's $04:80A1)
-    lda.l !PPOwn : clc : adc #$00A0 : sta.l !PPOwn
+    lda.l !PPOwn : cmp #$0080 : beq +   ; game's $04:80A1); not the ice palette
+    clc : adc #$00A0 : sta.l !PPOwn
 +
-    lda $42 : clc : adc #$0100 : adc.l !PPOff : sta.l !PPBufA   ; bank $7E
-    tax
-    lda.l $7E001C,x : and #$001F : sta.l !PPI                  ; buffer color 14 red
-    lda.l !PPBase : tax
-    lda.l TurtlePalettes+28,x : and #$001F
-    sec : sbc.l !PPI : bpl +
-    lda #$0000
-+   sta.l !PPK
+    ldx $42                         ; the game's CGRAM buffer (bank $7E)
+    txa : clc : adc #$0100 : adc.l !PPOff : sta.l !PPBufA   ; palette 0 (1)
     ldy #$0000                      ; Y = byte offset of the color (0-30)
 .color:
     cpy #$0004 : bcc .buffer
     cpy #$001E : bcs .buffer
-    tya : clc : adc.l !PPBase : tax
-    lda.l TurtlePalettes,x : sta.l !PPI
     tya : clc : adc.l !PPOwn : tax
     lda.l TurtlePalettes,x
-    cmp.l !PPI : beq .buffer
     jsr PPFade
     bra .store
 .buffer:
@@ -302,33 +307,121 @@ PPPalettes:
     cpy #$0020 : bcc .color
     rts
 
-; A = color -> each channel minus !PPK (at least 0)
+; Y = P3's/P4's info block -> A = palette index in TurtlePalettes: the turtle
+; (info +$1A), or 4 = the ice palette ($09:9379, the game's freeze record $01:93EF)
+; while that player is frozen (state $16 with its freeze flag set)
+PPOwnIdx:
+    phx
+    ldx.w #!P3_ptr : lda.w #!PPIceP3
+    cpy.w #!P3_info : beq +
+    ldx.w #!P4_ptr : lda.w #!PPIceP4
++   sta.l !PPTmp
+    lda $0000,x : beq .turtle       ; player pointer
+    tax
+    lda $16,x : cmp #$0016 : bne .turtle
+    lda.l !PPTmp : tax
+    lda $0000,x : beq .turtle
+    plx
+    lda #$0004
+    rts
+.turtle:
+    plx
+    lda $001A,y : and #$0003
+    rts
+
+; key word: effective palette index of P3 (high byte) and P4 (low byte)
+PPOwnKey:
+    phy
+    ldy.w #!P3_info : jsr PPOwnIdx : xba : sta.l !PPI
+    ldy.w #!P4_info : jsr PPOwnIdx : ora.l !PPI
+    ply
+    rts
+
+;!PPK = signed shift for palettes 8/9, the fade the game applies to the turtles:
+; measured on P1's and P2's live palettes (0/1) against their turtles' ROM colors
+; when both show the same uniform shift (fades to black and to white, e.g. the
+; turtles fading to white after the Technodrome); otherwise (one player's own
+; effect: ice, flashes) the screen fade from the HUD's white, -(31 - red).
+PPShift:
+    ldx $42
+    lda.l $7E000C,x : and #$001F : sec : sbc #$001F : sta.l !PPShiftHud
+    lda $D0 : ldy #$0100 : jsr PPLiveShift : bcc .hud
+    sta.l !PPShift1
+    lda $D2 : ldy #$0120 : jsr PPLiveShift : bcc .hud
+    cmp.l !PPShift1 : bne .hud
+    sta.l !PPK
+    rts
+.hud:
+    lda.l !PPShiftHud : sta.l !PPK
+    rts
+
+; A = character, Y = its palette's offset in the CGRAM buffer -> carry set and
+; A = shift if colors 2, 4 and 8 are its ROM colors shifted uniformly. Color 8
+; has blue 0 and red 27-31 in every turtle palette: lighter = its blue, darker = its
+; red minus the ROM red (all black when red is 0).
+PPLiveShift:
+    lsr : dec : and #$0003 : asl #5
+    ldx.w $1FF0 : beq +
+    clc : adc #$00A0                ; second palette set
++   sta.l !PPRec
+    tya : clc : adc $42 : sta.l !PPLive
+    tax : lda.l $7E0010,x           ; live color 8
+    xba : lsr #2 : and #$001F : beq .down
+    sta.l !PPK : bra .check
+.down:
+    lda.l $7E0010,x : and #$001F : bne +
+    lda #$FFE1 : sta.l !PPK : bra .check    ; -31
++   sta.l !PPK
+    lda.l !PPRec : tax
+    lda.l TurtlePalettes+$10,x : and #$001F
+    eor #$FFFF : inc : clc : adc.l !PPK : sta.l !PPK
+.check:
+    ldy #$0004 : jsr .cmp : bne .no
+    ldy #$0008 : jsr .cmp : bne .no
+    ldy #$0010 : jsr .cmp : bne .no
+    lda.l !PPK
+    sec
+    rts
+.no:
+    clc
+    rts
+.cmp:                               ; Y = byte offset of a color: Z set if equal
+    tya : clc : adc.l !PPRec : tax
+    lda.l TurtlePalettes,x : jsr PPFade : sta.l !PPCmp
+    tya : clc : adc.l !PPLive : tax
+    lda.l $7E0000,x : cmp.l !PPCmp
+    rts
+
+; A = color -> each channel + !PPK (signed), kept within 0-31
 PPFade:
     sta.l !PPTmp
     lda.l !PPK : bne +
     lda.l !PPTmp
     rts
-+   lda.l !PPTmp : and #$001F
-    sec : sbc.l !PPK : bpl +
-    lda #$0000
-+   sta.l !PPI                      ; red
-    lda.l !PPTmp : lsr #5 : and #$001F
-    sec : sbc.l !PPK : bpl +
-    lda #$0000
-+   asl #5 : ora.l !PPI : sta.l !PPI    ; green
-    lda.l !PPTmp : xba : lsr #2 : and #$001F
-    sec : sbc.l !PPK : bpl +
-    lda #$0000
-+   xba : asl #2 : ora.l !PPI       ; blue
++   lda.l !PPTmp : and #$001F : jsr .ch
+    sta.l !PPI                      ; red
+    lda.l !PPTmp : lsr #5 : and #$001F : jsr .ch
+    asl #5 : ora.l !PPI : sta.l !PPI    ; green
+    lda.l !PPTmp : xba : lsr #2 : and #$001F : jsr .ch
+    xba : asl #2 : ora.l !PPI       ; blue
     rts
+.ch:
+    clc : adc.l !PPK : bpl +
+    lda #$0000
+    rts
++   cmp #$0020 : bcc +
+    lda #$001F
++   rts
 
-; ---- an enemy held by P3/P4 (grab-and-slam): its frames come from the holder's
-; upload area (held-frame lists, +$06 = $8000; $03:C816 picks P1's list for P3, P2's
-; for P4), so its entries get the holder's tile page. Drawn as an ordinary object
+; ---- an enemy held by P3/P4 (grab, slam, lift/throw): its frames come from the
+; holder's upload area (lists at $01:B8AD/B8BD/B8CD; P3 uses P1's, P4 P2's), so its
+; entries get the holder's tile page. PPDrawClose sets the page only for tiles in
+; the holder's range ($00-$2F / $30-$5F), which enemies' own graphics never use, so
+; "held by P3/P4" (+$34) is enough (+$06 is not a "player-area frame" flag: it is
+; clear in about half of the held frames). Drawn as an ordinary object
 ; (carry set). JSLed by IsPlayerSlotX with the same stack layout as IsPlayerSlotFar.
 HeldEnemyTest:
     cpx #$08D0 : bcc .no            ; enemy slots
-    lda $06,x : bpl .no
     lda $34,x                       ; holder
     cmp.w #!P3_slot : beq .held
     cmp.w #!P4_slot : beq .held

@@ -252,6 +252,7 @@ HudFade:
 ; item per frame (info +$2C: bit 0 health bar, bit 1 score, else lives); otherwise
 ; the info state machine (join, continue, game over), then the score if dirty.
 HudDriver4:
+    jsr HudGameOverFrame
     jsl Orig_HudP1
     pha
     jsr HudCompact
@@ -288,6 +289,43 @@ HudDriver4:
     jsl Orig_DrawScore
 .ret:
     rts
+
+; ---- game-over screen ($0D) in a 3P/4P game: its BG3 map has the 2-box HUD; once
+; the map is decompressed ($1D28 = 0), the compact frame again, and for every player
+; in the game-over state (info +$00 = 6): name, score, GAME OVER
+HudGameOverFrame:
+    jsr HudFourMode : bcc .ret
+    lda $70 : and #$00FF : cmp #$000D : bne .ret
+    lda.l !HudFrameOn : bne .scores
+    lda.l $001D28 : bne .ret
+    pha : phx : phy
+    jsl HudQueueFrame
+    ldx.w #!P1_info : jsr .box
+    ldx.w #!P2_info : jsr .box
+    ldx.w #!P3_info : jsr .box
+    ldx.w #!P4_info : jsr .box
+    ply : plx : pla
+.ret:
+    rts
+.box:
+    lda $0000,x : cmp #$0006 : bne +
+    phx
+    lda $001A,x : asl
+    jsl $04AF7F                     ; name (X = info)
+    plx : phx
+    lda #$E633                      ; GAME OVER (as info state 5, $04:D616)
+    jsl $04DBB7
+    plx
++   rts
+.scores:                            ; the frames after: one box's score per frame
+    pha : phx                       ; (the VRAM queue is full in the first one)
+    lda $3A : and #$0003 : asl : tax    ; frame counter ($3A) -> box
+    lda.l .infos,x : tax
+    lda $0000,x : cmp #$0006 : bne +
+    jsl Orig_DrawScore
++   plx : pla
+    rts
+.infos: dw !P1_info, !P2_info, !P3_info, !P4_info
 
 ; ---- name ($04:D758, A = character * 2; was PHX / TAY / LDA $E5A3,Y) ----
 HudName:
@@ -458,6 +496,22 @@ HudBar:
 ; extra joined ends in a 2-player game.
 HudModeSet:
     pha
+    cmp #$0000 : beq .attract       ; back to the title/attract ($00) or the turtle
+    cmp #$001A : bne .game          ; intros after the ending ($1A): the 3P/4P game
+.attract:                           ; is over; the demos run as the original's (before this:
+    lda #$0000                      ; they were drawn as garbage and stayed dark).
+    sta.l !EndPlayers               ; P3/P4 of the game just ended (session bits 2/3:
+    lda 1,s : beq +                 ; the final screen shows their points, scripts4
+    lda.l !PlayerMode : and #$00FF  ; FinalPoints4); none on the title ($00)
+    cmp #$0003 : bcc +
+    lda.l !SelSession : and #$000C : sta.l !EndPlayers
++   lda #$0000
+    sta.l !Sel4State : sta.l !HudFrameOn
+    sta.l !SelCont : sta.l !SelSession
+    sta.l !P3_ptr : sta.l !P4_ptr
+    sta.l !P3_info+$0E : sta.l !P4_info+$0E
+    lda.l !PlayerMode : and #$FF00 : sta.l !PlayerMode
+.game:
     lda.l !Sel4State : cmp #$0003 : bne +
     lda.l !PlayerMode : and #$FF00 : sta.l !PlayerMode
     lda #$0000 : sta.l !Sel4State : sta.l !HudFrameOn
