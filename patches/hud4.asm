@@ -223,7 +223,7 @@ HudNmi:
     rep #$20
     pla
     plp
-    rtl
+    jml PPFlush                     ; 3P/4P: extension uploads after the HUD's vblank work
 HudChannelBit: db $01, $02, $04, $08, $10, $20, $40, $80
 
 ; A = color -> A = color with !HudFadeK subtracted from each channel (at least 0),

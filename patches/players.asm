@@ -109,16 +109,23 @@ TileBaseForX:
 ; "Is object X a player's main slot?" for the OAM builder ($00:92FB), called with
 ; JSR (same 3 bytes as the original CPX #$04E0, so the BCC after it is kept).
 ; Carry clear = player (original: X < $04E0, i.e. slots 0/1); P3/P4 slots added.
+; P3/P4 objects (mains in slots 5/7, companion A below $0400, companion B outside
+; the pool) go to IsPlayerSlotFar (extensions4.asm): player test for the mains, and the
+; extension marking of their OAM entries.
 IsPlayerSlotX:
-    cpx #$04E0 : bcc .done          ; P1/P2 exactly as before
-    cpx #!P3_slot : beq +
-    cpx #!P4_slot : bne .no
-+   jsl P34Live : bcs .player       ; P3/P4 (slots 5/7 are other objects otherwise)
-.no:
+    cpx #$04E0 : bcs .high
+    cpx #$0400 : bcc .far           ; below $0400: P3/P4 companion A
+    clc                             ; P1/P2 exactly as before
+    rts
+.high:
+    cpx #!P3_slot : beq .far
+    cpx #!P4_slot : beq .far
+    cpx #!P3_compB : beq .far
+    cpx #!P4_compB : beq .far
     sec
     rts
-.player:
-    clc
+.far:
+    jsl IsPlayerSlotFar
 .done:
     rts
 

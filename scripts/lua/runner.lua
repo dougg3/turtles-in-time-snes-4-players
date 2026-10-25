@@ -7,7 +7,9 @@
 --   wait <frames>          run frames with current held input
 --   hold <port> <btns|->   set held buttons for port (comma list: a,b,x,y,l,r,up,down,left,right,start,select; '-' = none)
 --   tap <port> <btns> [n]  hold buttons for n frames (default 2) then release, then wait 2 frames
---   shot <name>            screenshot -> <out>/<name>.png
+--   shot <name>            screenshot -> <out>/<name>.png (video thread's last frame)
+--   rawshot <name>         PPU frame buffer now -> <out>/<name>.rgb ("W H\n" + RGB bytes;
+--                          scripts/rgb2png.py converts)
 --   save <file>            savestate -> <out>/<file> (written at next NMI-handler exec)
 --   cdl <name>             PRG ROM CDL bytes -> <out>/<name>.cdl
 --   wram <name>            128 KiB WRAM dump -> <out>/<name>.wram
@@ -26,10 +28,11 @@
 --   cpurec <name> <frames> per NMI: "<entry clock> <busy clocks> <lag 0/1>" text lines -> <out>/<name>.cpu
 --                          busy = NMI entry ($00:8174) to full-path RTI ($00:8205); lag = NMI arrived while the
 --                          previous one was still running (short path at $00:8190)
---   memrec <name> <start> <len> <frames>
---                          record WRAM[start..start+len) every frame (hex start/len) -> <out>/<name>.memrec
---   hooks <name> <frames> <addr> [addr...]
---                          log "<frame> <addr> <master clock> X= Y= A=" whenever a listed address executes -> <out>/<name>.hooks
+--   memrec <name> <start> <len> <frames> [<start2> <len2>]
+--                          record WRAM[start..start+len) (and a second range) every frame (hex
+--                          start/len) -> <out>/<name>.memrec
+--   hooks <name> <frames> <addr> [addr...] [mNNNN...]   (mNNNN: also log the WRAM word at NNNN)
+--                          log "<frame> <addr> <master clock> X= Y= A= L=<scanline>" whenever a listed address executes -> <out>/<name>.hooks
 --   poke <addr> <byte> [byte...]  write WRAM bytes (hex) - experiment only, never touches ROM
 --   ai <player> <on|off>   RAM-driven bot for that player (0-1 = ports; 2-3 = P3/P4 via multitap): approach nearest enemy (slots 11-19),
 --                          match depth, attack; walk right when no enemies. Overrides hold/tap.
@@ -324,6 +327,19 @@ local function step()
       waitUntil = frame + n + 2
     elseif op == "shot" then
       writeFile(c[2] .. ".png", emu.takeScreenshot())
+    elseif op == "rawshot" then
+      -- the PPU's frame buffer right now (synchronous, unlike takeScreenshot, which
+      -- returns the video thread's last frame): RGB bytes, width x height
+      local buf = emu.getScreenBuffer()
+      local size = emu.getScreenSize()
+      local parts, row = {}, {}
+      for i = 1, #buf do
+        local v = buf[i]
+        row[#row + 1] = string.char((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF)
+        if #row == 256 then parts[#parts + 1] = table.concat(row); row = {} end
+      end
+      parts[#parts + 1] = table.concat(row)
+      writeFile(c[2] .. ".rgb", string.format("%d %d\n", size.width, size.height) .. table.concat(parts))
     elseif op == "save" then
       pendingSave = c[2]
       return -- wait for it to be written before continuing
@@ -391,19 +407,27 @@ local function step()
       waitFor(tonumber(c[3]))
     elseif op == "memrec" then
       memrec = { name = c[2], start = tonumber(c[3], 16), len = tonumber(c[4], 16),
+                 start2 = c[6] and tonumber(c[6], 16), len2 = c[7] and tonumber(c[7], 16) or 0,
                  untilFrame = frame + tonumber(c[5]), count = 0,
                  file = assert(io.open(out .. "/" .. c[2] .. ".memrec", "wb")) }
       waitFor(tonumber(c[5]))
     elseif op == "hooks" then
-      local lines, refs, addrs = {}, {}, {}
+      local lines, refs, addrs, mems = {}, {}, {}, {}
       for i = 4, #c do
-        local a = tonumber((c[i]:gsub(":", "")), 16)
-        addrs[#addrs + 1] = a
-        refs[#refs + 1] = emu.addMemoryCallback(function()
-          local st = emu.getState()
-          lines[#lines + 1] = string.format("%d %06X %d X=%04X Y=%04X A=%04X", frame, a, emu.getMasterClock(),
-            st["cpu.x"] or 0, st["cpu.y"] or 0, st["cpu.a"] or 0)
-        end, emu.callbackType.exec, a)
+        if c[i]:sub(1, 1) == "m" then mems[#mems + 1] = tonumber(c[i]:sub(2), 16) end
+      end
+      for i = 4, #c do
+        if c[i]:sub(1, 1) ~= "m" then
+          local a = tonumber((c[i]:gsub(":", "")), 16)
+          addrs[#addrs + 1] = a
+          refs[#refs + 1] = emu.addMemoryCallback(function()
+            local st = emu.getState()
+            local m = {}
+            for _, ma in ipairs(mems) do m[#m + 1] = string.format(" m%04X=%04X", ma, rd16(ma)) end
+            lines[#lines + 1] = string.format("%d %06X %d X=%04X Y=%04X A=%04X L=%d%s", frame, a, emu.getMasterClock(),
+              st["cpu.x"] or 0, st["cpu.y"] or 0, st["cpu.a"] or 0, st["ppu.scanline"] or -1, table.concat(m))
+          end, emu.callbackType.exec, a)
+        end
       end
       hooks = { name = c[2], untilFrame = frame + tonumber(c[3]), lines = lines, refs = refs, addrs = addrs }
       waitFor(tonumber(c[3]))
@@ -616,11 +640,16 @@ emu.addEventCallback(function()
     for i = memrec.start, memrec.start + memrec.len - 1 do
       parts[#parts + 1] = string.char(emu.read(i, emu.memType.snesWorkRam))
     end
+    if memrec.start2 then
+      for i = memrec.start2, memrec.start2 + memrec.len2 - 1 do
+        parts[#parts + 1] = string.char(emu.read(i, emu.memType.snesWorkRam))
+      end
+    end
     memrec.file:write(table.concat(parts))
     memrec.count = memrec.count + 1
     if frame >= memrec.untilFrame then
       memrec.file:close()
-      say("memrec %s: %d frames x %d bytes", memrec.name, memrec.count, memrec.len)
+      say("memrec %s: %d frames x %d bytes", memrec.name, memrec.count, memrec.len + memrec.len2)
       memrec = nil
     end
   end

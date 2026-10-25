@@ -83,6 +83,7 @@
 !SelFrozen       = $1CB8   ; confirmed (cursor not animated)
 !SelN            = $1CBA   ; frame copy: entries left
 !SelChr          = $1CBC   ; character of the player being updated
+; extensions4.asm: $1CC0-$1CDB (variables listed there); buffers $7E:7F00-$7F7F
 
 ; ---- direct page ----
 !P3_char   = $D4           ; character (object type), like $D0/$D2
