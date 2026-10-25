@@ -47,5 +47,53 @@ Clear56Far:
 .done:
     rtl
 
+; ---- enemy grabs: the original maps player index <-> object with "P1 or else
+; P2"; P3/P4 got P2's object/index, so a grab could flag one player and hold
+; another (P1 found waiting for ever in state $1A for a release that never came) ----
+; Y = player index * 2 -> A = player object. Keeps X, Y.
+SlotAfromY:
+    phx
+    tyx
+    lda.l .slots,x
+    plx
+    rtl
+.slots: dw !P1_slot, !P2_slot, !P3_slot, !P4_slot
+
+; $04:81CF (traps, e.g. Scene 6's planks, $03:E000; was DEY / BNE / LDY #$0400 / RTL /
+; LDY #$0470 / RTL): Y = player index * 2 + 1 -> Y = player object. Keeps A, X.
+SlotYfromIndex1:
+    pha
+    dey
+    jsl SlotAfromY
+    tay
+    pla
+    rtl
+
 Slots4End:
 assert Slots4End <= $20FFFF, "slots4 code overflows bank $20"
+
+; $03:C418 (grab: held object from the enemy's +$34 = player index * 2 + 1; was
+; LDA #$0400 / DEY / BEQ $C421 / LDA #$0470)
+org $03C418
+    dey
+    jsl SlotAfromY
+    nop #4
+assert pc() == $03C421
+; $04:8298 (grab check: player index from object X; was LDY #0 / CPX #$0400 / BEQ /
+; INY / INY)
+org $048298
+    jsl IndexYfromX
+    nop #6
+assert pc() == $0482A2
+org $0481CF : jml SlotYfromIndex1   ; was DEY / BNE $81D6 / LDY #$0400 / RTL / ...
+
+; Scene 6 plank trap, state 3 ($03:B166): the held player from +$5E = player
+; index * 2 + 1 (was LDY #$0400 / DEC A / BEQ / LDY #$0470), and the release, which
+; addressed the per-player word array one byte low ($19DB,Y; the relocation
+; repointed only the $19DC operands): the struck turtle waited for ever in state $1A.
+org $03B16A
+    tay
+    jsl SlotYfromIndex1
+    nop #4
+assert pc() == $03B173
+org $03B199+1 : dw !PlayerWordArray-1   ; STA $19DB,Y

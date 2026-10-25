@@ -33,6 +33,12 @@ org $00C864+1 : dw Pw_19DE   ; STZ $19DE
 org $028866+1 : dw Pw_19DC   ; STZ $19DC
 org $028869+1 : dw Pw_19DE   ; STZ $19DE
 
+; Base $19DB with Y = player index * 2 + 1 (missed by the first pass, which
+; only looked for $19DC): Scene 6 plank trap release ($03:B199, in slots4.asm with
+; its object fix) and a similar enemy in bank $02 (not executed in the recorded runs).
+org $0287BD+1 : dw !PlayerWordArray-1   ; LDA $19DB,Y
+org $0287CD+1 : dw !PlayerWordArray-1   ; STA $19DB,Y
+
 ; Second per-player word array $19B0 (P1 $19B0, P2 $19B2; $19B4+ in use) relocated
 ; to 4 words at !PlayerHitFlags. Written with player index from the attacker's
 ; companion-B object ($04:8589) — "this player hit/was credited" flags.

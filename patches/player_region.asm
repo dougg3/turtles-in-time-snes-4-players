@@ -116,8 +116,16 @@ PlayerRegionEnd:
 assert PlayerRegionEnd <= $00FFB0, "player_region code overflows bank $00 padding"
 
 ; ---- $04:85F8 loop end: STZ $0456 / STZ $04C6 (P1/P2 +$56) -> also P3/P4 ----
+org $00FBF2
+assert PlayerHelpersEnd <= $00FBF2, "player helpers run into IsP1SideMain"
+; $00:B6F8 (companion effect frames: P1's set, else P2's; was CPX #$0400): Z set for
+; P1 and P3 (P3 draws from P1's tile numbers and palette, P4 from P2's)
+IsP1SideMain:
+    cpx #!P1_slot : beq +
+    cpx #!P3_slot
++   rts
+assert pc() <= $00FBFC
 org $00FBFC
-assert PlayerHelpersEnd <= $00FBFC, "player helpers run into Clear56"
 Clear56:
     jml Clear56Far
 Clear56End:
@@ -308,3 +316,4 @@ org $029C4D                         ; vertical shift of all objects: TXA / CLC /
 org $008876 : jsl ClearExtras       ; was STA $000400
 org $00964F : jsr Prio0Stub        ; was LDX #$08D0
 org $038760 : jsr Prio3Stub        ; was LDX #$08D0
+org $00B6F8 : jsr IsP1SideMain      ; was CPX #$0400 (BNE $B70B follows)

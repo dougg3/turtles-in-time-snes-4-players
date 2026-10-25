@@ -1,0 +1,14 @@
+# Regression scenario: Scene 6 deck with the plank traps (state from the clean ROM,
+# scripts/make_regress_states.sh), 7000 frames of 2P AI play with god mode; with the
+# regression's extra CPU time P2 is struck by planks at about frames 5190 and 6720
+# (state $1A; without it P1 at 3280 and 4800). Covers the plank's
+# release of the struck player (per-player word array, relocated).
+load build/regress/states/scene6.mss
+rngpin
+bg framehash h 4 7000
+bg cpurec lag 7000
+ai 0 on
+ai 1 on
+god on
+wait 7000
+end

@@ -3,6 +3,7 @@
 # WRAM/OAM/CGRAM hash streams with the baseline from the original ROM.
 #   scripts/regress.sh baseline          # (re)create build/regress/baseline from the clean ROM
 #   scripts/regress.sh [ROM]             # compare ROM (default build/tmnt4-4p.sfc) with the baseline
+# REGRESS_ONLY=<name> runs (and, with baseline, re-records) that one scenario only.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 # the scenarios start from save states of the clean ROM: made once
@@ -12,7 +13,9 @@ if [ "${1:-}" = baseline ]; then
 else
   rom="$(realpath "${1:-$root/build/tmnt4-4p.sfc}")"; dest="$root/build/regress/candidate"
 fi
-rm -rf "$dest"; mkdir -p "$dest"
+only="${REGRESS_ONLY:-*}"
+if [ -n "${REGRESS_ONLY:-}" ]; then rm -rf "$dest/$REGRESS_ONLY"; else rm -rf "$dest"; fi
+mkdir -p "$dest"
 # WRAM ranges that patches deliberately repurpose (input slots, new variables);
 # excluded from the WRAM hash for both baseline and candidate.
 export TMNT_HASH_EXCLUDE="$(tr -d ' \n' < "$root/tests/hash_exclude.txt")"
@@ -23,7 +26,7 @@ export TMNT_HASH_EXCLUDE="$(tr -d ' \n' < "$root/tests/hash_exclude.txt")"
 if [ "${REGRESS_REALTIME:-0}" != 1 ]; then export MESEN_ARGS="--Snes.PpuExtraScanlinesBeforeNmi=400"; fi
 # Relocated state (orig:new:len) is read from its new address in candidate runs only.
 if [ "${1:-}" != baseline ]; then export TMNT_HASH_MAP="$(tr -d ' \n' < "$root/tests/hash_map.txt")"; fi
-ls "$root"/tests/scenarios/*.txt | xargs -P3 -I{} sh -c \
+ls "$root"/tests/scenarios/$only.txt | xargs -P3 -I{} sh -c \
   'n=$(basename {} .txt); MESEN_TIMEOUT=900 "'"$root"'/scripts/mesen-run.sh" {} "'"$dest"'/$n" "'"$rom"'" > /dev/null 2>&1'
 [ "${1:-}" = baseline ] && { echo "baseline written to $dest"; exit 0; }
 # Boot smoke test (not frame-compared, see tests/scenarios.boot/README.md):
@@ -38,7 +41,7 @@ else
   echo "ok   boot smoke test ($(grep 'peek 00414' "$smoke/run.log"))"; smoke_fail=0
 fi
 fail=0
-for f in "$root"/build/regress/baseline/*/h.hash; do
+for f in "$root"/build/regress/baseline/$only/h.hash; do
   n=$(basename "$(dirname "$f")"); c="$dest/$n/h.hash"
   if [ ! -s "$c" ]; then echo "FAIL $n: no hash output"; fail=1; continue; fi
   # (no early exit in awk: with pipefail, SIGPIPE on paste would abort the script)
