@@ -79,7 +79,14 @@
 ; CPU is stopped during extra lines, and the sound uploads run in the idle loop
 ; ($00:8154), which must get its time in normal lines.
 !PPExtraCpu     = 0             ; before NMI
-!PPExtraVblank  = 208           ; after NMI: frame logic and DMA (4P lag <= 2P lag)
+!PPExtraVblank  = 255           ; after NMI: frame logic and DMA (4P lag <= 2P lag)
+; After a lag frame (the NMI found the previous one still running, $00:8190) also
+; !PPBoostCpu lines before NMI for !PPBoostFrames frames: a lagging game has no idle
+; time for the sound uploads anyway. All four turtles shocked in Scene 8 (X-ray
+; frames uploaded every frame) lagged every other frame with 208 after NMI alone.
+!PPBoostCpu     = 32
+!PPBoostFrames  = 60
+!PPBoost        = $1CFE         ; frames of boost left
 
 TurtlePalettes = $0992F9        ; 32 bytes per turtle: 4-byte header, colors 2-14;
                                 ; second set at +$A0 when $1FF0 is set
@@ -126,8 +133,7 @@ PPFrame:                            ; (A 16-bit)
 +
     sep #$20
     lda #$03 : sta.l $0021C4        ; extended sprites, raised per-line limits
-    lda.b #!PPExtraCpu : sta.l $0021C5  ; extra CPU time and vblank: four
-    lda.b #!PPExtraVblank : sta.l $0021C6   ; players and more sprites need both
+    jsr PPExtraTime                 ; extra CPU time and vblank
     rep #$20
     lda #$0000                      ; attributes: none yet (set while drawing)
     ldx #$003E
@@ -267,7 +273,15 @@ PPFlush:
     rep #$30
     pha : phx
     lda.l !PPListN : beq .done
+    ; keep channel 0 as the game left it: entries are listed when $1ED2 >= 2 in the
+    ; previous frame, but the game may set up its own channel 0 HDMA in between (Scene
+    ; 8 intro, $1ED2 8 -> 0: a CGRAM gradient). Left aimed at $21C2, that HDMA wrote
+    ; 41 bytes per frame into the port (palette 8 overwritten: black Raph).
+    lda.l $004300 : pha             ; DMAP/BBAD, A1T, A1B/DAS low, DAS high
+    lda.l $004302 : pha
+    lda.l $004304 : pha
     sep #$20
+    lda.l $004306 : pha
     lda #$00 : sta.l $004300        ; mode 0: one register, A-bus increment
     lda #$C2 : sta.l $004301        ; $21C2
     rep #$20
@@ -283,6 +297,12 @@ PPFlush:
     txa : clc : adc #$0007 : tax
     cmp.l !PPListN : bcc .entry
     lda #$0000 : sta.l !PPListN
+    sep #$20
+    pla : sta.l $004306
+    rep #$20
+    pla : sta.l $004304
+    pla : sta.l $004302
+    pla : sta.l $004300
 .done:
     plx : pla
     plp
@@ -734,12 +754,42 @@ PPStream:
     pla
     jml $008D8D
 
+; $21C5/$21C6 for the next frame (A 8-bit on entry and exit): four players and more
+; sprites need both; the boost after a lag frame (PPLagNmi)
+PPExtraTime:
+    rep #$20
+    lda.l !PPBoost : beq +
+    dec : sta.l !PPBoost
+    lda.w #!PPBoostCpu : bra ++
++   lda.w #!PPExtraCpu
+++  sep #$20
+    sta.l $0021C5
+    lda.b #!PPExtraVblank : sta.l $0021C6
+    rts
+
 ; ---- $00:93A0: OAM full (the low byte of the high-table pointer $02 wrapped; A
 ; 8-bit; was SEC / REP #$20 / RTL). Extensions active and not yet extended: carry on
 ; in the extended OAM. ----
 PPWrap:
     lda.l !PPActive : beq .full
     lda.l !PPExt : bne .full
+    jsr PPWrapStart
+    jml $0093BB                     ; LDA #$80 / STA $1E / CLC / BRA (next entry)
+.full:
+    sec
+    rep #$20
+    rtl
+
+; ---- $00:92D5: the same for the player draw path (turtles; full exit of its
+; high-table step at $00:92EF, was SEC / REP #$20 / RTL). Without it a turtle
+; drawn when OAM filled up lost its remaining pieces. ----
+PPWrapPlayer:
+    lda.l !PPActive : beq PPWrap_full
+    lda.l !PPExt : bne PPWrap_full
+    jsr PPWrapStart
+    jml $0092F1                     ; CLC / LDA #$80 / BRA $92C5 (next entry)
+
+PPWrapStart:                        ; (A 8-bit) continue in the extended shadow
     lda #$01 : sta.l !PPExt
     rep #$30
     phx : phy
@@ -750,11 +800,7 @@ PPWrap:
     lda.b #!PPExtLow : sta $2181    ; WRAM port to the extended shadow
     lda.b #!PPExtLow>>8 : sta $2182
     lda.b #!PPExtLow>>16&1 : sta $2183
-    jml $0093BB                     ; LDA #$80 / STA $1E / CLC / BRA (next entry)
-.full:
-    sec
-    rep #$20
-    rtl
+    rts
 
 ; ---- $00:91C7, builder done (was STZ $00 / SEP #$20 / LDA $1E): extended OAM:
 ; finish its last high-table byte, hide entries no longer used, and give the
@@ -810,7 +856,20 @@ assert Extensions4End <= $20FFFF, "extensions4 code overflows bank $20"
 org $00916C                         ; was LDA #$03E0 / STA $02
     jsl PPFrame
     nop
+org $008190 : jsl PPLagNmi : nop   ; was REP #$30 / JSR $8271 (NMI during the last one)
+org $00FF70                         ; (free)
+PPLagNmi:
+    rep #$30
+    jsr $8271
+    pha
+    lda.l !PPActive : beq +
+    lda.w #!PPBoostFrames : sta.l !PPBoost
++   pla
+    rtl
+PPLagNmiEnd:
+assert PPLagNmiEnd <= $00FFB0, "PPLagNmi runs into the header"
 org $0093A0 : jml PPWrap            ; was SEC / REP #$20 / RTL (OAM full)
+org $0092D5 : jml PPWrapPlayer      ; the same in the player draw path
 org $0091C7                         ; was STZ $00 / SEP #$20 / LDA $1E
     jsl PPEnd
     nop : nop

@@ -274,14 +274,17 @@ ScrClrWalk4:
 +   ldx !P4_ptr : beq +
     jsl $04AD21
     lda #$0018 : jsr .offset        ; P4: right of P2's spot
-+   bra ScrClrDone
++   brl ScrClrDone
 ; target x (+$42) += A, target y (+$5E) += $10, once: only just after $04:AD21 set
 ; state $36 (sub-state 0). Kept on screen ($18-$E8) when the spot is a screen
 ; position; Scene 8's spots are relative to its scrolling (P1 -$20, P2 +$20: no clamp)
+; No offset when P1 and P2 walk to the same spot (into a door: Scene 4 before
+; Shredder; P3/P4 stopped short outside it, user report).
 .offset:
     pha
     lda $16,x : cmp #$0036 : bne .skip
     lda $38,x : bne .skip
+    jsr .sameSpot : beq .skip
     lda $42,x : cmp #$0100 : bcc +
     pla : clc : adc $42,x : bra ++
 +   pla : clc : adc $42,x
@@ -292,6 +295,27 @@ ScrClrWalk4:
     rts
 .skip:
     pla
+    rts
+; Z set if P1's and P2's spots in this step are the same ($04:AD3C, tables in bank $01: index =
+; $DA3E[$1784] + $DA54[$178A - 1] + $DA50[player: P1 0, others 2]; x $D9AE, y $D9F6).
+; From the tables, as P1/P2 may get theirs later. Keeps X.
+.sameSpot:
+    phx
+    ldy #$0000
+    lda.l $001784 : asl : tax
+    lda.l $01DA3E,x : pha
+    lda.l $00178A : dec : asl : tax
+    lda.l $01DA54,x : clc : adc 1,s : sta 1,s   ; 1,s: base
+    clc : adc.l $01DA50 : tax
+    lda.l $01D9AE,x : pha                       ; P1's x
+    lda.l $01D9F6,x : pha                       ; P1's y (1,s y, 3,s x, 5,s base)
+    lda 5,s : clc : adc.l $01DA52 : tax
+    lda.l $01D9F6,x : cmp 1,s : bne +
+    lda.l $01D9AE,x : cmp 3,s : bne +
+    iny
++   pla : pla : pla
+    plx
+    cpy #$0001
     rts
 
 ;---- $04:AD83 (wait until arrived, state $37; was STZ $00 / LDX #$0400 ...) ----

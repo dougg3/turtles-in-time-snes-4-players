@@ -27,6 +27,11 @@ PlayerVramPiece2:   dw $0000, $0300, $0000, $0300   ; was $01:C29A (added to $62
 PlayerSpawnOffsetX: dw $FFE8, $0018, $FFF4, $000C   ; was $01:9F19: start X offset; P3/P4 -$0C/+$0C (-$30 put P3 left of the playfield clamp)
 PlayerDA50:         dw $0000, $0002, $0000, $0002   ; was $01:DA50 (meaning unknown; read at $04:AD5C
                                                     ; with DB presumed $01 — not observed). P3/P4 copy P1/P2.
+PlayerObjB109:      dw $0400, $0470, !P3_slot, !P4_slot ; was $01:B109: the player caught by
+                                                    ; Roadkill Rodney's cable (chain +$5E =
+                                                    ; player*2+1); Rodney and the cable are
+                                                    ; put at its y (P3/P4 read past the
+                                                    ; table, both drawn off screen)
 PlayerTablesEnd:
 assert PlayerTablesEnd <= $01FFC0, "player tables overflow bank $01 padding"
 
@@ -36,6 +41,7 @@ macro repoint(addr, table)
     dw <table>
 endmacro
 
+%repoint($03A386, PlayerObjB109)
 %repoint($00B2E5, PlayerCompanionA)
 %repoint($00B6A2, PlayerCompanionA)
 %repoint($00B6BD, PlayerCompanionA)

@@ -268,19 +268,56 @@ Sel4Check:
     lda #$0001 : sta !Sel4State
     jmp Sel4EnterCont
 +   lda #$0002 : sta !Sel4State     ; off unless...
-    lda $0056 : cmp #$0001 : bne .done  ; "2 PLAYERS" from the title menu (not
-                                    ; Versus, $56 = 4, which also has $E0 set)
+    lda $0056 : beq .one            ; "1 PLAYER" or "2 PLAYERS" from the title menu
+    cmp #$0001 : bne .done          ; (not Versus, $56 = 4, which also has $E0 set)
     lda $00E0 : beq .done           ; a 2-player game
     jsr DetectMultitap : bcc .done  ; with a multitap
     lda #$0001 : sta !Sel4State
     jsr Sel4Enter
 .done:
     rts
+.one:                               ; a 1-player game with a multitap: the original
+    jsr DetectMultitap : bcc .done  ; select for P1 (state 2), but a four-player game
+    jmp Sel4EnterOne                ; P2-P4 can join in play, as P2 can in the original
 
 Sel4Enter:
-    lda.l !PlayerMode : and #$FF00 : ora #$0003 : sta.l !PlayerMode
-    ldx.w #!P3_info : jsr .info     ; P3/P4 out; objects and cursors cleared
+    jsr Sel4Mode
+    ldx.w #!P3_info : jsr .info     ; P3/P4 boxes: PRESS START on this screen
     ldx.w #!P4_info : jsr .info
+    jsl HudQueueFrame               ; 4-box HUD; P1/P2 contents again
+    ldx.w #!P1_info : jsr .redraw
+    lda $00E0 : beq +
+    ldx.w #!P2_info : jsr .redraw
++   jsr Sel4Frames
+    jsr Sel4Graphics
+    lda.w !P1_info+$1A : asl : tax : lda.l SelBit,x : sta !SelHover   ; in color already
+    lda.w !P2_info+$1A : asl : tax : lda.l SelBit,x : ora !SelHover : sta !SelHover
+    rts
+.info:                              ; X = info block (zeroed by Sel4Mode): the box
+    lda #$0001 : sta $000C,x        ; state machine shows PRESS START on this screen
+    rts                             ; (+$0C, $04:D43D)
+
+.redraw:
+    phx
+    jsl $04AF7F                     ; name
+    plx
+    lda $002C,x : ora #$0007 : sta $002C,x   ; lives, bar, score follow
+    rts
+
+; 1-player game with a multitap: four-player game, original select for P1. P2-P4
+; boxes say WAIT A MOMENT here (as P2's in the original) and PRESS START in play.
+Sel4EnterOne:
+    jsr Sel4Mode
+    jsl HudQueueFrame               ; 4-box HUD; P1's contents again
+    ldx.w #!P1_info : jsr Sel4Enter_redraw
+    rts
+
+; Four-player game from this select on: P3/P4 out (info zeroed, offering Don and
+; Raph), objects cleared, nobody extra yet.
+Sel4Mode:
+    lda.l !PlayerMode : and #$FF00 : ora #$0003 : sta.l !PlayerMode
+    ldx.w #!P3_info : jsr .zero
+    ldx.w #!P4_info : jsr .zero
     lda #$0002 : sta.w !P3_info+$1A ; their boxes offer Don and Raph
     lda #$0003 : sta.w !P4_info+$1A
     lda #$0000 : sta.l !P3_ptr : sta.l !P4_ptr
@@ -291,29 +328,12 @@ Sel4Enter:
     ldx.w #!P4_compA : jsl Orig_ObjClear
     ldx.w #!P3_compB : jsl Orig_ObjClear
     ldx.w #!P4_compB : jsl Orig_ObjClear
-    jsl HudQueueFrame               ; 4-box HUD; P1/P2 contents again
-    ldx.w #!P1_info : jsr .redraw
-    lda $00E0 : beq +
-    ldx.w #!P2_info : jsr .redraw
-+   jsr Sel4Frames
-    jsr Sel4Graphics
-    lda.w !P1_info+$1A : asl : tax : lda.l SelBit,x : sta !SelHover   ; in color already
-    lda.w !P2_info+$1A : asl : tax : lda.l SelBit,x : ora !SelHover : sta !SelHover
     rts
-.info:                              ; X = info block: zero; box state machine shows
-    phx                             ; PRESS START on this screen (+$0C, $04:D43D)
+.zero:
     ldy #$0020
 -   stz $0000,x
     inx : inx
     dey : bne -
-    plx
-    lda #$0001 : sta $000C,x
-    rts
-.redraw:
-    phx
-    jsl $04AF7F                     ; name
-    plx
-    lda $002C,x : ora #$0007 : sta $002C,x   ; lives, bar, score follow
     rts
 
 ; P3/P4 full cursor frames: P2's in their palette with their digit. Tag-only frames.
@@ -623,8 +643,6 @@ Sel4Done:
     cpx #$0008 : bcc .player
     jsr Sel4Portraits               ; show the final choices
     jsr Sel4Cursors
-    lda !SelCont : ora !SelSession : bne .orig
-    lda #$0003 : sta !Sel4State     ; nobody extra: 2-player game from the next screen
 .orig:
     ldy #$91CD
     jsl $00A152
