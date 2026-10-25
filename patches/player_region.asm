@@ -46,6 +46,9 @@ CompBExit:                          ; was CPX #$0780 (JSR; BCC loop / RTL kept)
     rts
 
 ; ---- companion-A loop ($00:C50D, slots 2-7) ----
+; Slots 2-7 hold both companions (A: slots 2/3, B: slots 4/6), so this loop is what
+; runs P1's/P2's companion B (attack objects, portal effects, boards) in play; the
+; companion-B loop ($00:C448) is rarely used. P3/P4 companion B too.
 CompAStep:                          ; was JSL $00C524
     jsr IsP34Main : beq +
     jml Orig_CompAObject
@@ -56,6 +59,8 @@ CompAExit:
     phx
     ldx.w #!P3_compA : lda $14,x : beq + : jsl Orig_CompAObject
 +   ldx.w #!P4_compA : lda $14,x : beq + : jsl Orig_CompAObject
++   ldx.w #!P3_compB : lda $14,x : beq + : jsl Orig_CompAObject
++   ldx.w #!P4_compB : lda $14,x : beq + : jsl Orig_CompAObject
 +   plx
 .done:
     sec

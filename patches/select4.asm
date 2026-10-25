@@ -268,6 +268,8 @@ Sel4Check:
     lda #$0001 : sta !Sel4State
     jmp Sel4EnterCont
 +   lda #$0002 : sta !Sel4State     ; off unless...
+    lda $0056 : cmp #$0001 : bne .done  ; "2 PLAYERS" from the title menu (not
+                                    ; Versus, $56 = 4, which also has $E0 set)
     lda $00E0 : beq .done           ; a 2-player game
     jsr DetectMultitap : bcc .done  ; with a multitap
     lda #$0001 : sta !Sel4State

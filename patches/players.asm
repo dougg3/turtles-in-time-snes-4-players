@@ -122,7 +122,7 @@ IsPlayerSlotX:
     cpx #!P4_slot : beq .far
     cpx #!P3_compB : beq .far
     cpx #!P4_compB : beq .far
-    sec
+    jsl HeldEnemyTest               ; enemies held by P3/P4: marked like P3/P4
     rts
 .far:
     jsl IsPlayerSlotFar

@@ -322,6 +322,25 @@ PPFade:
 +   xba : asl #2 : ora.l !PPI       ; blue
     rts
 
+; ---- an enemy held by P3/P4 (grab-and-slam): its frames come from the holder's
+; upload area (held-frame lists, +$06 = $8000; $03:C816 picks P1's list for P3, P2's
+; for P4), so its entries get the holder's tile page. Drawn as an ordinary object
+; (carry set). JSLed by IsPlayerSlotX with the same stack layout as IsPlayerSlotFar.
+HeldEnemyTest:
+    cpx #$08D0 : bcc .no            ; enemy slots
+    lda $06,x : bpl .no
+    lda $34,x                       ; holder
+    cmp.w #!P3_slot : beq .held
+    cmp.w #!P4_slot : beq .held
+.no:
+    sec
+    rtl
+.held:
+    pha
+    lda #$0001 : sta.l !PPCarry
+    pla
+    jmp PPOpen
+
 ; ---- OAM builder: a P3/P4 object about to be drawn (IsPlayerSlotX, JSRed first by
 ; the per-object routine $00:92FB, JSLs here). Carry = the player test (clear: draw
 ; with the player path): mains if live (P34Live), companions never (P3's/P4's

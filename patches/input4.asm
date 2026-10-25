@@ -94,3 +94,20 @@ org $04B1FF+1 : dw !Combined_new    ; LDA $002E (absolute)
 org $04C47A+1 : db !Combined_new
 org $04FA6E+1 : db !Combined_new
 org $04FA77+1 : db !Combined_new
+
+; Readers that never ran in the recorded test runs (found by a ROM scan): the
+; Time Trial menus and course select (Time Trial could not be started), Versus
+; screens, the game-over screen's "any button" skip, a debug key check.
+org $049950+1 : db !Combined_new   ; LDA $2E
+org $049CD3+1 : db !Combined_new   ; LDA $2E
+org $04A1B3+1 : db !Combined_new   ; LDA $2E
+org $04A480+1 : db !Combined_new   ; LDA $2E
+org $04A59D+1 : db !Combined_new   ; LDA $2E
+org $04A764+1 : db !Combined_new   ; LDA $2E
+org $04A89F+1 : db !Combined_new   ; LDA $2E
+org $04A8DB+1 : db !Combined_new   ; LDA $2E
+org $04D2EA+1 : db !Combined_new   ; LDA $2E
+org $00A92E+1 : db !Combined_new   ; LDA $2E
+org $00AA4B+1 : db !Combined_new   ; LDA $2E
+org $038001+1 : db !Combined_new   ; LDA $2E
+org $038014+1 : db !Combined_new   ; LDA $2E

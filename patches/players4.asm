@@ -246,7 +246,36 @@ EnemyHitsP3P4:
     lsr $06                     ; carry = some player was hit (as the original)
     rtl
 EnemyHitsEnd:
-assert EnemyHitsEnd <= $03FFF0, "bank 03 extension overflows padding"
+
+; ---- enemy hit by a player's attack ($03:8277, 138 callers): also P3/P4 ----
+; Original: for P1's then P2's companion B (the attack object; type +$14 set and
+; +$5A clear): LDY #companion / JSR $82A4 (box test vs enemy X, applies the hit),
+; then LSR $06 / RTL. P3's/P4's companion B live outside the pool ($1530/$1640)
+; and were never tested: P3/P4 could not hit enemies.
+Orig_AttackTest_82A4 = $0382A4
+org $038291
+    jmp AttackHitsP3P4          ; was LDA $06B4 (P2's block follows; now here)
+org $03FF80                     ; after player_region.asm's stub at $03:FF70
+assert Bank3StubEnd <= $03FF80, "bank 03 stub runs into AttackHitsP3P4"
+AttackHitsP3P4:
+    lda $06B4 : beq +           ; P2 (original $03:8291-829E)
+    lda $06FA : bne +
+    ldy #$06A0
+    jsr Orig_AttackTest_82A4
++   lda !PlayerMode : and #$00FF : cmp #$0003 : bcc .done
+    lda.w !P3_compB+$14 : beq +
+    lda.w !P3_compB+$5A : bne +
+    ldy.w #!P3_compB
+    jsr Orig_AttackTest_82A4
++   lda.w !P4_compB+$14 : beq .done
+    lda.w !P4_compB+$5A : bne .done
+    ldy.w #!P4_compB
+    jsr Orig_AttackTest_82A4
+.done:
+    lsr $06
+    rtl
+AttackHitsEnd:
+assert AttackHitsEnd <= $03FFF0, "bank 03 extension overflows padding"
 
 org $048503 : jml SelectTarget              ; was LDA $9E / BEQ $856B
 
