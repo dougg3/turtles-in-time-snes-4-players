@@ -35,6 +35,19 @@
 !PPRec      = $1D52             ; PPLiveShift: ROM record of the turtle
 !PPLive     = $1D54             ;              its live palette (bank $7E)
 !PPCmp      = $1D56
+!M7Tab      = $1D5C             ; M7BFrame: HDMA table address per value (6 words,
+                                ; $1D5C-$1D67: A, B, C, D, H scroll, V scroll)
+!M7Tmp      = $1D68
+!M7Head     = $1D6A             ; M7BFrame: next history slot (0-31)
+!M7Fill     = $1D6C             ;           frames in the history (0-32)
+!M7Tmp2     = $1D6E
+!M7Hist     = $7F1280           ; 32 slots x 24 bytes: both bands' A, B, C, D, H, V
+                                ; (high WRAM never used by the game)
+!M7Buf      = $7F1700           ; the second layer's settings ($90 bytes, port $4600),
+                                ; uploaded in the next vblank
+!M7Ptr      = $7F1790           ; M7BFrame: next byte in !M7Buf
+!M7Queued   = $7F1792           ;           non-zero: settings were queued last frame
+!M7Delay    = 20                ; P3/P4 copy their partner's band from 20 frames ago
 !PPListN    = $1CF0             ; bytes used in !PPList
 !PPList     = $7E7F00           ; uploads for the next NMI: source (3), port address
 !PPListMax  = 9*7               ; (2), bytes (2); 9 entries
@@ -130,9 +143,18 @@ PPFrame:                            ; (A 16-bit)
 .off:
     lda #$0000 : sta.l !PPPalOK     ; make palettes 8/9 again when switched on
     sep #$20
-    lda #$00 : sta.l $0021C4        ; (on a SNES: unused B-bus addresses)
-    sta.l $0021C5 : sta.l $0021C6
+    lda #$00 : sta.l $0021C5        ; (on a SNES: unused B-bus addresses)
+    sta.l $0021C6
     rep #$20
+    lda.l $000070 : and #$00FF : cmp #$0019 : bne .m7reset
+    lda.l !PlayerMode : and #$00FF : cmp #$0003 : bcc .m7off
+    jsl PPPresent : bcc .m7off
+    jsr M7BFrame                    ; time warp: P3/P4 on the second Mode 7 layer
+    bra .done
+.m7reset:
+    lda #$0000 : sta.l !M7Fill      ; a new time warp starts with an empty history
+.m7off:
+    jsr M7BOff                      ; extensions off
 .done:
     ply : plx
     plp
@@ -336,6 +358,147 @@ PPOwnKey:
     ldy.w #!P4_info : jsr PPOwnIdx : ora.l !PPI
     ply
     rts
+
+; ---- time-warp vortex (mode $19): the game shows one Mode 7 picture of a
+; turtle in two bands (HDMA: matrix, scroll, and colors 10/11 = the turtle's
+; bandana from $01:E16F; P1's band on top, P2's below). P3 and P4 tumble on the
+; second Mode 7 layer in their partner's band, on the
+; mirrored side of the screen, !M7Delay frames behind (another angle and size, so
+; they don't look like reflections), with their own bandanas. Runs from the OAM
+; builder, while the screen is drawn: the layer's settings go to !M7Buf and are
+; uploaded in the next vblank, and the layer is switched on from the frame after
+; the first upload (settings written or the layer switched mid-frame would show
+; on part of the screen). ----
+M7BOff:
+    lda #$0000 : sta.l !M7Queued
+    sep #$20
+    lda #$00 : sta.l $0021C4        ; second Mode 7 layer (and the extensions) off
+    rep #$20
+    rts
+
+M7BFrame:
+    ; the game's HDMA channels, by destination: A $1B, B $1C, C $1D, D $1E,
+    ; H scroll $0D, V scroll $0E -> table address (bank $7E)
+    ldx #$000A
+    lda #$0000
+-   sta.l !M7Tab,x
+    dex : dex : bpl -
+    ldy #$0000                      ; Y = channel * $10
+.chan:
+    tyx
+    lda.l $004301,x : and #$00FF    ; destination
+    ldx #$000A
+-   cmp.l .dests,x : beq +
+    dex : dex : bpl -
+    bra .nextchan
++   phx
+    tyx
+    lda.l $004302,x                 ; table address
+    plx
+    sta.l !M7Tab,x
+.nextchan:
+    tya : clc : adc #$0010 : tay
+    cpy #$0080 : bcc .chan
+    ldx #$000A                      ; all six found, tables in the expected shape:
+-   lda.l !M7Tab,x : beq .off       ; 1 line, n1 lines, n2 lines, end
+    phx
+    tax
+    lda.l $7E0000,x : and #$00FF : cmp #$0001 : bne .bad
+    lda.l $7E0003,x : and #$0080 : bne .bad
+    lda.l $7E0006,x : and #$0080 : bne .bad
+    lda.l $7E0009,x : and #$00FF : bne .bad
+    plx
+    dex : dex : bpl -
+    bra .ok
+.bad:
+    plx
+    lda #$0000 : sta.l !M7Fill      ; another Mode 7 picture (planet): start over
+.off:
+    jmp M7BOff
+.ok:
+    ; history: this frame's band values into the next slot
+    lda.l !M7Head : jsr .slot : sta.l !M7Tmp
+    ldx #$0000
+-   phx
+    lda.l !M7Tab,x : tax
+    lda.l $7E0004,x : pha           ; band 1 (P1's)
+    lda.l $7E0007,x : pha           ; band 2 (P2's)
+    lda 5,s : clc : adc.l !M7Tmp : tax
+    pla : sta.l !M7Hist+12,x
+    pla : sta.l !M7Hist,x
+    plx
+    inx : inx
+    cpx #$000C : bcc -
+    lda.l !M7Head : inc : and #$001F : sta.l !M7Head
+    lda.l !M7Fill : cmp #$0020 : bcs +
+    inc : sta.l !M7Fill
++   cmp.w #!M7Delay+1 : bcs +       ; not enough history yet: P3/P4 not shown
+    jmp M7BOff
++
+    lda.l !M7Head : sec : sbc.w #!M7Delay+1 : and #$001F : jsr .slot
+    sta.l !M7Tmp                    ; the slot shown
+    lda #$0000 : sta.l !M7Ptr       ; settings from the start of !M7Buf (port $4600)
+    lda.l !M7Tab : tax              ; split = 1 + n1 (the second band's first line)
+    lda.l $7E0003,x : and #$00FF : inc
+    jsr .byte
+    ldx #$000F : jsr .zeros
+    lda #$0000 : ldx.w #!P3_ptr : ldy.w #!P3_info : jsr .set
+    lda #$000C : ldx.w #!P4_ptr : ldy.w #!P4_info : jsr .set
+    lda #$007F : sta.l !PPBank      ; upload in the next vblank
+    lda.w #!M7Buf : ldy #$4600 : ldx #$0090 : jsr PPAdd
+    lda.l !M7Queued : beq +         ; settings uploaded in this frame's vblank:
+    sep #$20
+    lda #$04 : sta.l $0021C4        ; second Mode 7 layer on
+    rep #$20
++   lda #$0001 : sta.l !M7Queued
+    rts
+.slot:                              ; A = slot -> A = slot * 24
+    asl #3 : pha : asl : clc : adc 1,s : sta 1,s : pla
+    rts
+; A = band offset in the slot (0 or 12), X = player pointer, Y = info block: one
+; $40-byte set
+.set:
+    clc : adc.l !M7Tmp : sta.l !M7Tmp2
+    phy
+    phx
+    ldx #$0000
+-   phx
+    txa : clc : adc.l !M7Tmp2 : tax
+    lda.l !M7Hist,x
+    jsr .word
+    plx
+    inx : inx
+    cpx #$000C : bcc -
+    ldx #$0004 : jsr .zeros
+    lda #$0C00 : jsr .word          ; colors 10 and 11 from the set
+    plx
+    lda $0000,x : beq +             ; player present: enabled, screen mirrored
+    lda #$0003
++   jsr .byte
+    ldx #$000D : jsr .zeros
+    ldx #$0014 : jsr .zeros         ; colors 0-9 (not used)
+    ply
+    lda $001A,y : and #$0003 : asl #2 : tax ; turtle -> $01:E16F (colors 10, 11)
+    lda.l $01E16F,x : jsr .word
+    lda.l $01E171,x : jsr .word
+    ldx #$0008                      ; colors 12-15
+.zeros:                             ; X bytes of 0
+-   lda #$0000 : jsr .byte
+    dex : bne -
+    rts
+.word:
+    pha : jsr .byte : pla : xba
+.byte:                              ; A low -> the next byte of !M7Buf (A, X kept)
+    phx : pha
+    lda.l !M7Ptr : tax
+    inc : sta.l !M7Ptr
+    lda 1,s
+    sep #$20
+    sta.l !M7Buf,x
+    rep #$20
+    pla : plx
+    rts
+.dests: dw $001B, $001C, $001D, $001E, $000D, $000E
 
 ;!PPK = signed shift for palettes 8/9, the fade the game applies to the turtles:
 ; measured on P1's and P2's live palettes (0/1) against their turtles' ROM colors
