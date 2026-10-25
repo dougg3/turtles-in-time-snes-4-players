@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Download and build the tools into tools/, at the versions in scripts/tools.sh:
-#   scripts/setup.sh        Asar (tools/bin/asar), Flips (tools/bin/flips) and Mesen
-#                           (tools/mesen/Mesen, with the .NET SDK it needs in tools/dotnet)
+#   scripts/setup.sh        Asar (tools/bin/asar), Flips (tools/bin/flips) and mesen-tmnt4p
+#                           (tools/mesen-tmnt4p/Mesen, with the .NET SDK it needs in tools/dotnet)
 # Nothing is installed outside tools/. Run it again after a version changes; finished
 # steps are skipped. Needs git, curl, make, cmake, clang, Python 3 and the SDL2 development
 # files (see README.md).
@@ -59,27 +59,27 @@ if ! stamp dotnet "$DOTNET_CHANNEL"; then
   echo "$DOTNET_CHANNEL" > "$tools/.dotnet"
 fi
 
-if ! stamp mesen "$MESEN_COMMIT"; then
-  echo "Mesen $MESEN_COMMIT (a few minutes)"
-  src="$tools/src/mesen"
-  fetch "$MESEN_REPO" "$MESEN_COMMIT" "$src"
+if ! stamp mesen-tmnt4p "$MESEN_TMNT4P_COMMIT"; then
+  echo "mesen-tmnt4p $MESEN_TMNT4P_COMMIT (a few minutes)"
+  src="$tools/src/mesen-tmnt4p"
+  fetch "$MESEN_TMNT4P_REPO" "$MESEN_TMNT4P_COMMIT" "$src"
   # the makefile doesn't track header dependencies: build from scratch. USE_AOT: a native
   # program that runs without .NET (only the build needs it)
   make -C "$src" clean > /dev/null 2>&1 || true
-  make -C "$src" -j"$jobs" CXX="$cxx" CC="$cc" USE_AOT=true > "$tools/src/mesen.log" 2>&1 \
-    || { tail -20 "$tools/src/mesen.log"; echo "setup: Mesen failed (tools/src/mesen.log)"; exit 1; }
+  make -C "$src" -j"$jobs" CXX="$cxx" CC="$cc" USE_AOT=true > "$tools/src/mesen-tmnt4p.log" 2>&1 \
+    || { tail -20 "$tools/src/mesen-tmnt4p.log"; echo "setup: mesen-tmnt4p failed (tools/src/mesen-tmnt4p.log)"; exit 1; }
   # portable: with settings.json next to it, Mesen keeps its settings and the files it
-  # unpacks (its core among them) in tools/mesen, apart from any other Mesen
-  mkdir -p "$tools/mesen"
-  rm -f "$tools/mesen/MesenCore.so"     # unpacked again from the new build
+  # unpacks (its core among them) in tools/mesen-tmnt4p, apart from any other Mesen
+  mkdir -p "$tools/mesen-tmnt4p"
+  rm -f "$tools/mesen-tmnt4p/MesenCore.so"     # unpacked again from the new build
   for f in Mesen libSkiaSharp.so libHarfBuzzSharp.so; do    # the program and its UI libraries
-    cp "$src/bin/linux-x64/Release/linux-x64/publish/$f" "$tools/mesen/$f"
+    cp "$src/bin/linux-x64/Release/linux-x64/publish/$f" "$tools/mesen-tmnt4p/$f"
   done
   # the test runner and the bots are Lua scripts that read and write files, and take
   # more than the default 1 s per call
-  [ -f "$tools/mesen/settings.json" ] ||
-    echo '{"Debug": {"ScriptWindow": {"AllowIoOsAccess": true, "ScriptTimeout": 10}}}' > "$tools/mesen/settings.json"
-  echo "$MESEN_COMMIT" > "$tools/.mesen"
+  [ -f "$tools/mesen-tmnt4p/settings.json" ] ||
+    echo '{"Debug": {"ScriptWindow": {"AllowIoOsAccess": true, "ScriptTimeout": 10}}}' > "$tools/mesen-tmnt4p/settings.json"
+  echo "$MESEN_TMNT4P_COMMIT" > "$tools/.mesen-tmnt4p"
 fi
 
 echo "tools ready"
