@@ -17,7 +17,7 @@ python3 "$root/scripts/gen_select_glyphs.py" "$root/patches/select4_glyphs.asm"
 cp "$clean" "$out"
 chmod u+w "$out"
 "$root/tools/bin/asar" --fix-checksum=on --symbols=wla --symbols-path="$root/build/tmnt4-4p.sym" "$root/patches/main.asm" "$out"
-"$root/tools/bin/flips" --create --bps "$clean" "$out" "$root/build/tmnt4-4p.bps" >/dev/null || true
+"$root/tools/bin/flips" --create --bps "$clean" "$out" "$root/build/tmnt4-4p-patch.bps" >/dev/null || true
 sha1sum "$out"
 # Patched bytes must not contain an original branch/loop target (needs recorded CDL files).
 cdls=$(ls "$root"/build/runs/*/*.cdl 2>/dev/null || true)
