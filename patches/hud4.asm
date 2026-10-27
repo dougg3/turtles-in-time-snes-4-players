@@ -5,7 +5,7 @@
 ;
 ; Box b (player b+1) = BG3 columns 8b..8b+7, rows 0-3:
 ;   r0  badge digit (top)     border, score right-aligned in the border    corner
-;   r1  badge digit (bottom)  name (4 chars)                               edge
+;   r1  badge digit (bottom)  notch corner, name (4 chars, cols 2-5)        edge
 ;   r2  edge   lives (1 big digit)  gap  health bar (4 tiles)               edge
 ;   r3  corner lives (bottom)       line health bar (bottom)               corner
 ; Palettes: P1 1 (blue), P2 5 (orange) as the original; P3 6 (purple), P4 7 (red),
@@ -27,6 +27,14 @@ Orig_StateMachine = $04D3C3     ; player info state machine (info4.asm)
 !HudBlankTile  = $2100          ; tile $100 (blank), palette 0, priority
 !HudBorderTop  = $255F          ; border line tiles, palette 1
 !HudBorderBot  = $25F4
+; Corner tiles (HudCornerTiles), in BG3 tiles only the 2-box HUD uses ("1UP"/"2UP"
+; badges); a 4P game never shows that HUD (select, scene cards, continue: 4 boxes),
+; and the game reloads its font at the title and turtle select.
+!HudBadgeTile1 = $012D          ; badge digit 1-4 bottoms with a rounded left corner
+!HudBadgeTile2 = $012E
+!HudBadgeTile3 = $012F
+!HudBadgeTile4 = $015D
+!HudStepTile   = $016D          ; the line turning up after the badge
 
 org $208000
 ; ---- helpers ----
@@ -62,7 +70,7 @@ HudIndexX:
 
 ; ---- tables (index = player * 2) ----
 HudAttr:      dw $2500, $3500, $3900, $3D00   ; priority + palette 1/5/6/7 + tile bit 8
-HudNamePos:   dw $5021, $5029, $5031, $5039   ; row 1, col 8b+1
+HudNamePos:   dw $5022, $502A, $5032, $503A   ; row 1, col 8b+2 (col 1: the badge notch)
 HudScorePos:  dw $5003, $500B, $5013, $501B   ; row 0, cols 8b+3..8b+6
 HudLivesPos:  dw $5041, $5049, $5051, $5059   ; rows 2-3, col 8b+1
 HudBarPos:    dw $5043, $504B, $5053, $505B   ; rows 2-3, cols 8b+3..8b+6
@@ -72,13 +80,16 @@ HudPalCommon: dw $7FFF, $6940                 ; box colors 2-3: white, dark blue
 ; measured in CGRAM): Leo, Mike, Don, Raph.
 HudTurtleColor: dw $7F13, $02DF, $7E3F, $013F
 
-; BG3 rows 0-3 (32 words each): frame and badges of the four boxes.
+; BG3 rows 0-3 (32 words each): frame and badges of the four boxes. The line under
+; the badge digit starts with a rounded corner (badge tiles, HudCornerTiles) and turns
+; up in col 1 (step tile, then the game's top-left corner $1F7) into the top border,
+; clear of the name.
 macro hudbox_r0(n, pal)
-    dw $2000|(<pal><<10)|($150+<n>), !HudBorderTop, !HudBorderTop, !HudBorderTop
+    dw $2000|(<pal><<10)|($150+<n>), $25F7, !HudBorderTop, !HudBorderTop
     dw !HudBorderTop, !HudBorderTop, !HudBorderTop, $25F0
 endmacro
-macro hudbox_r1(n, pal)
-    dw $2000|(<pal><<10)|($160+<n>), !HudBlankTile, !HudBlankTile, !HudBlankTile
+macro hudbox_r1(pal, tile)
+    dw $2000|(<pal><<10)|<tile>, $2400|!HudStepTile, !HudBlankTile, !HudBlankTile
     dw !HudBlankTile, !HudBlankTile, !HudBlankTile, $25F1
 endmacro
 macro hudbox_r2()
@@ -91,7 +102,8 @@ macro hudbox_r3()
 endmacro
 HudFrameTemplate:
     %hudbox_r0(1, 1) : %hudbox_r0(2, 5) : %hudbox_r0(3, 6) : %hudbox_r0(4, 7)
-    %hudbox_r1(1, 1) : %hudbox_r1(2, 5) : %hudbox_r1(3, 6) : %hudbox_r1(4, 7)
+    %hudbox_r1(1, !HudBadgeTile1) : %hudbox_r1(5, !HudBadgeTile2)
+    %hudbox_r1(6, !HudBadgeTile3) : %hudbox_r1(7, !HudBadgeTile4)
     %hudbox_r2() : %hudbox_r2() : %hudbox_r2() : %hudbox_r2()
     %hudbox_r3() : %hudbox_r3() : %hudbox_r3() : %hudbox_r3()
 HudFrameTemplateEnd:
@@ -105,6 +117,7 @@ assert HudFrameTemplateEnd-HudFrameTemplate == 256, "HUD frame template must be 
 HudQueueFrame:
     jsr HudFourMode : bcc .done
     lda #$0001 : sta.l !HudFrameOn
+    sta.l !HudCornerPending         ; corner tiles in the next vblank (HudCornerTiles)
     lda #$0000
 .row:
     pha                             ; A = byte offset of the row in the template
@@ -181,6 +194,7 @@ HudNmi:
     rtl
 .on:
     phx
+    jsr HudCornerTiles
     ldx $42                         ; X = the game's CGRAM buffer (bank $7E)
     lda.l $7E000C,x : and #$001F    ; P1 box color 2 (white) as faded by the game:
     eor #$001F : sta.l !HudFadeK    ; fade = 31 - red (subtracted from every channel)
@@ -225,6 +239,55 @@ HudNmi:
     plp
     jml PPFlush                     ; 3P/4P: extension uploads after the HUD's vblank work
 HudChannelBit: db $01, $02, $04, $08, $10, $20, $40, $80
+
+; ---- corner tiles (vblank, after HudQueueFrame): write the five corner tiles. The
+; font ($00:9B8C, all of BG3 tiles $100-$1FF) is loaded only at the title and when
+; turtle select starts, some 40 frames before select queues the frame; this
+; runs once per queued frame. Badge digits 1-4 = the game's lives digit bottoms
+; ($161-$164, read back from VRAM) with the square corner of the line (rows 5-7)
+; rounded as the game's other corners; the step tile = the game's bottom-right
+; corner moved to the left edge. Pixel rows (0 transparent, 2 white, 3 dark blue);
+; words = plane 0 | plane 1 << 8.
+;   badge rows 5-7     step rows 0-7
+;   ..222222           223..... x5
+;   .2222222           23......
+;   22233333           3.......
+;                      ........
+; 16-bit A/X/Y. Clobbers A, X.
+HudCornerTiles:
+    lda.l !HudCornerPending : bne +
+    rts
++   lda #$0000 : sta.l !HudCornerPending
+    phy
+    sep #$20 : lda #$80 : sta $2115 : rep #$20   ; VMAIN: +1 word after the high byte
+    ldy #$0000                      ; Y = digit * 2 (0-6)
+.digit:
+    tya : asl #2 : clc : adc.w #$4000+($161*8) : sta $2116
+    ldx #$0000
+-   lda $2139 : sta.l !HudCornerBuf,x   ; rows 0-4 (prefetched on the address write)
+    inx : inx
+    cpx #$000A : bcc -
+    tyx : lda.l HudBadgeDest,x : sta $2116
+    ldx #$0000
+-   lda.l !HudCornerBuf,x : sta $2118
+    inx : inx
+    cpx #$000A : bcc -
+    lda.w #$3F00 : sta $2118        ; ..222222
+    lda.w #$7F00 : sta $2118        ; .2222222
+    lda.w #$FF1F : sta $2118        ; 22233333
+    iny : iny
+    cpy #$0008 : bcc .digit
+    lda.w #$4000+(!HudStepTile*8) : sta $2116
+    ldx #$0005
+-   lda.w #$E020 : sta $2118        ; 223.....
+    dex : bne -
+    lda.w #$C040 : sta $2118        ; 23......
+    lda.w #$8080 : sta $2118        ; 3.......
+    stz $2118                       ; ........
+    ply
+    rts
+HudBadgeDest: dw $4000+(!HudBadgeTile1*8), $4000+(!HudBadgeTile2*8)
+              dw $4000+(!HudBadgeTile3*8), $4000+(!HudBadgeTile4*8)
 
 ; A = color -> A = color with !HudFadeK subtracted from each channel (at least 0),
 ; as the game fades its palettes. 16-bit A.

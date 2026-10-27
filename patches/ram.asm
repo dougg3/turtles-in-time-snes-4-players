@@ -89,6 +89,13 @@
 !SelFrozen       = $1CB8   ; confirmed (cursor not animated)
 !SelN            = $1CBA   ; frame copy: entries left
 !SelChr          = $1CBC   ; character of the player being updated
+!SelSwapped      = $1CBE   ; players whose cursor another player swapped this frame (SelBit)
+; warp4.asm (high WRAM: $7F:1280-$7F:31FF is never used by the game)
+!WarpN           = $7F2000 ; time warp: players in the game (0-4)
+!WarpList        = $7F2002 ; their indexes * 2, in order (4 words)
+; hud4.asm, same area
+!HudCornerBuf    = $7F2010 ; corner tiles: rows 0-4 of a lives digit bottom (5 words)
+!HudCornerPending = $7F201A ; corner tiles to write in the next vblank (HudQueueFrame)
 ; extensions4.asm: $1CC0-$1CDB (variables listed there); buffers $7E:7F00-$7F7F
 
 ; ---- direct page ----

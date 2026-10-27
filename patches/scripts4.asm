@@ -20,7 +20,7 @@
 ;             state $37. 3P/4P: all present players; P3 on P1's side, P4 on P2's;
 ;             "all done" = at least the count taken at the start (no hang when
 ;             a player drops out).
-;   Lives tally (script at $04:AE1F): $04:AE45 counts each player's lives into
+;   Health-bar tally (script at $04:AE1F, every stage clear): $04:AE45 counts each player's HUD bar into
 ;             the score ($04:AE64, info via $00:FA00) and waits for $A8+1
 ;             players, $04:AEBD cheers (state $29): also P3/P4.
 ;   $00:D4F2 / $00:D546  frozen (state $16): start = ice palette (script $8D6B
@@ -339,7 +339,7 @@ ScrClrDone:                         ; 3P/4P: next step once $00 >= players count
     jml $04ADC4                     ; INC $1782 / RTL
 +   rtl
 
-;---- $04:AE45 (lives tally; was LDX #$0400 / JSL $04AE64 / LDX #$0470 / ...) ----
+;---- $04:AE45 (health-bar tally; was LDX #$0400 / JSL $04AE64 / LDX #$0470 / ...) ----
 ScrLives4:
     ldx #$0400 : jsl $04AE64
     ldx #$0470 : jsl $04AE64
@@ -475,6 +475,45 @@ CamSelect4:
     inc $02
 +   rts
 
+;---- the other camera blocks start the same way ($04:EA8F, EB63, ECDD, ED1E: LDX $9E /
+; BEQ +$0F / LDX $A0 / BNE two / LDX $9E / BNE one / LDX $A0 / one: X = player;
+; $04:EC9F: LDX $9E / BEQ / LDX $A0 / BEQ, two-player code at +$0A, one-player at
+; $ECBA/$ECBF/$ECC2). Only $EA12 had the 3P/4P choice: with P1 and P2 out, these
+; read "the player's" X at $0008 (user report 2026-10-25: alone in Scene 9, the
+; camera jumped, background tiles went missing). Now as CamSelect4. ----
+; -> $02 = present players, X = the last one found (0: nobody)
+CamCount4:
+    stz $02
+    stz $00
+    ldx $9E : jsr CamSelect4_one
+    ldx $A0 : jsr CamSelect4_one
+    ldx !P3_ptr : jsr CamSelect4_one
+    ldx !P4_ptr : jsr CamSelect4_one
+    ldx $00
+    lda $02
+    rts
+
+macro CamSel(start, two, one, nobody)
+CamSel<start>:
+    jsl Scr4Mode : bcs ?four
+    ldx $9E : bne ?p1
+    jml $04<nobody>                 ; original: P1 out
+?p1:
+    jml $04<start>+5                ; original: LDX $A0 ...
+?four:
+    jsr CamCount4
+    cmp #$0002 : bcs ?two
+    jml $04<one>                    ; one (or nobody, X = 0 as the original)
+?two:
+    jml $04<two>
+endmacro
+
+%CamSel(EA8F, EAF5, EAA1, EA9E)
+%CamSel(EB63, EBE4, EB75, EB72)
+%CamSel(ECDD, ECFD, ECEF, ECEC)
+%CamSel(ED1E, ED3E, ED30, ED2D)
+%CamSel(EC9F, ECA9, ECC2, ECBF)
+
 ;---- CamA/CamB (players4 CamCalc, JSRed by the camera blocks; returns to them) ----
 CamCalcFar:
     lda $0408 : sta !CamA           ; 1P/2P: P1 X / P2 X (the original reads)
@@ -595,6 +634,11 @@ org $04EA12                         ; LDX $9E / BEQ $EA21 (5 bytes)
     jml CamSelect4
     nop
 assert pc() == $04EA17
+org $04EA8F : jml CamSelEA8F : nop  ; each: LDX $9E / BEQ (5 bytes)
+org $04EB63 : jml CamSelEB63 : nop
+org $04EC9F : jml CamSelEC9F : nop
+org $04ECDD : jml CamSelECDD : nop
+org $04ED1E : jml CamSelED1E : nop
 org $00D4F2 : jml ScrFreeze4        ; (D500 stays: continues)
 org $00ADB3 : jml ScrCarry4         ; (ADB7 stays: JSL entry for one player)
 org $03C8B0                         ; ASL / ASL / ORA $32,X / TAY (5 bytes)

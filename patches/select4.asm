@@ -3,9 +3,11 @@
 ; In a 2-player game with a multitap on port 2, the select screen shows the 4-box
 ; HUD; P3/P4 join by pressing START (their boxes say PRESS START). Once anyone
 ; extra has joined, choosing follows four-player rules:
-;   - cursors that have not confirmed may share a turtle, so everyone can move;
-;   - confirming locks the turtle: other cursors skip it, and any cursor still on
-;     it moves on to the next free turtle;
+;   - moving goes to the next turtle nobody else is on or has confirmed; with no
+;     such turtle (four cursors), the cursor swaps with the next unconfirmed one
+;     (user's design, 2026-10-24), so two cursors never share a turtle;
+;   - confirming locks the turtle: other cursors skip it (any cursor still on it,
+;     possible only from older rules, moves on to the next free turtle);
 ;   - at time-out, unconfirmed players keep their turtle if it is free, else take
 ;     the next free one.
 ; After a continue in a game with P3/P4 the same select runs for the players who
@@ -198,21 +200,63 @@ SelHovered:
     sec
     rts
 
-; X = player index * 2, A = direction (1 right, 3 left): move to the next turtle
-; nobody else has confirmed (info +$1A). Keeps X.
+; X = player index * 2, A = direction (1 right, 3 left): move to the next turtle in
+; that direction that nobody else is on or has confirmed; if there is none (all four
+; cursors in), swap with the next unconfirmed one: that player's cursor takes this
+; turtle (SelSwapped: it can't confirm this frame). Confirmed turtles are skipped;
+; with nowhere to go the cursor stays. Info +$1A = turtle, +$10 = confirmed. Keeps X.
 SelStep:
     sta !SelDir
+    jsr SelMyTurtle : sta !SelCand
+    ldy #$0003
+-   lda !SelCand : clc : adc !SelDir : and #$0003 : sta !SelCand
+    jsr SelLocked : bcs +
+    jsr SelHovered : bcc .move      ; free
++   dey : bne -
+    jsr SelMyTurtle : sta !SelCand  ; no free turtle: the next unconfirmed one
+    ldy #$0003
+-   lda !SelCand : clc : adc !SelDir : and #$0003 : sta !SelCand
+    jsr SelLocked : bcc .swap
+    dey : bne -
+    rts                             ; all others confirmed: stay
+.swap:
+    stx !SelMe
+    ldx #$0000                      ; whose cursor is on it
+-   cpx !SelMe : beq +
+    jsr SelJoined : bcc +
     phx
     lda.l SelInfo,x : tax
-    lda $001A,x : sta !SelCand
+    lda $001A,x
     plx
-    ldy #$0004
--   lda !SelCand : clc : adc !SelDir : and #$0003 : sta !SelCand
-    jsr SelLocked : bcc +
-    dey : bne -
-+   phx
+    cmp !SelCand : beq ++
++   inx : inx
+    cpx #$0008 : bcc -
+    ldx !SelMe                      ; (nobody: can't happen)
+    bra .move
+++  phx                             ; X = the other player: gets my turtle
+    ldx !SelMe
+    jsr SelMyTurtle
+    plx
+    phx
+    pha
+    lda.l SelInfo,x : tax
+    pla : sta $001A,x
+    plx
+    lda.l SelBit,x : ora !SelSwapped : sta !SelSwapped
+    lda #$0000 : jsr SelMoved       ; its name and box (no sound)
+    ldx !SelMe
+.move:
+    phx
     lda.l SelInfo,x : tax
     lda !SelCand : sta $001A,x
+    plx
+    rts
+
+; X = player index * 2 -> A = its turtle (info +$1A). Keeps X.
+SelMyTurtle:
+    phx
+    lda.l SelInfo,x : tax
+    lda $001A,x
     plx
     rts
 
@@ -253,6 +297,7 @@ Sel4Frame:
 +   lda !Sel4State : cmp #$0001 : beq +
     jml Orig_SelInput
 +   inc !SelTick
+    stz !SelSwapped
     ldx #$0000
 .player:
     jsr Sel4Player
@@ -397,6 +442,7 @@ Sel4Player:
     lda $0010,x
     ldx !SelMe
     cmp #$0000 : bne .done          ; confirmed
+    lda !SelSwapped : and.l SelBit,x : bne .done    ; just swapped: not this frame
     lda.l SelPadNew,x : tay
     lda $0000,y : sta !SelPad
     bit #$D0F0 : bne .confirm       ; as the original ($04:9603)

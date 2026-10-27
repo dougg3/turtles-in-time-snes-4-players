@@ -469,14 +469,49 @@ Other1A4:
 
 ; ---- join / character rules ($04:D45A; was LDA $00A8 / BNE $D488) ----
 ; 2P: only while one player is in the game. 3P/4P: straight to the join check
-; ($04:D489: game mode allows it and the player presses START).
+; ($04:D489: game mode allows it and the player presses START); on the one-player
+; select (a 1P game with a multitap) the waiting boxes first follow P1's cursor.
 JoinCheck4:
     jsr HudFourMode : bcs .four
     lda.w $00A8 : beq +
     jml $04D488                     ; RTL
 +   jml $04D45F
 .four:
-    jml $04D489
+    lda $70 : and #$00FF : cmp #$0002 : bne +
+    lda.l !Sel4State : cmp #$0001 : beq +
+    lda $0000,x : cmp #$0008 : bne +
+    jsr OfferFree4
++   jml $04D489
+
+; One-player select, X = info of a waiting box (state 8, WAIT A MOMENT): offer the
+; first turtle from the box's own (P2 Mike, P3 Don, P4 Raph) that neither P1's cursor
+; nor a lower waiting box has, as the original's P2 box shows P1's turtle + 1
+; ($04:D45F) and as the boxes offer at stage start (HudAbsent4). Keeps X.
+OfferFree4:
+    phx
+    jsl InfoIndexY
+    sty !CharOwn
+    tya : lsr : sta !CharCand       ; own default turtle
+.try:
+    lda.w !P1_info+$1A : and #$0003 : cmp !CharCand : beq .next
+    ldy #$0002                      ; lower boxes, P2 up
+-   cpy !CharOwn : bcs .ok
+    tyx : lda.l InfoBlocks,x : tax
+    lda $0000,x : cmp #$0008 : bne +
+    lda $001A,x : and #$0003 : cmp !CharCand : beq .next
++   iny : iny
+    bra -
+.next:
+    lda !CharCand : inc : and #$0003 : sta !CharCand
+    bra .try
+.ok:
+    plx
+    lda !CharCand : cmp $001A,x : beq +
+    sta $001A,x
+    phx
+    jsl $04D561                     ; name (as $04:D483)
+    plx
++   rts
 
 ; ---- joining ($04:D4A1, X = info; was LDA #$0004 / STA $0000,X) ----
 ; P3/P4 joining for the first time get the credits character select gives P1/P2.
@@ -567,7 +602,8 @@ TurtlePal4:
 
 ; ---- stage start (SpawnPlayers4), X = info of P3/P4 not in play: if it was in the
 ; game (out of it, or counting down), name and score in the new frame; if it never
-; joined, the box offers a turtle nobody has (its state machine shows the name) ----
+; joined, the box offers a turtle nobody has, its name shown right away (as P2's in
+; the original; the state machine only runs in play) ----
 HudAbsent4:
     lda $000E,x : beq .free
     phx
@@ -583,6 +619,9 @@ HudAbsent4:
     inc
     bra -
 +   sta $001A,x
+    phx
+    jsl $04AF7F                     ; name (Orig_InfoHud2)
+    plx
     rtl
 
 Info4End:

@@ -462,8 +462,11 @@ M7BFrame:
     lda.l $7E0003,x : and #$00FF : inc
     jsr .byte
     ldx #$000F : jsr .zeros
-    lda #$0000 : ldx.w #!P3_ptr : ldy.w #!P3_info : jsr .set
-    lda #$000C : ldx.w #!P4_ptr : ldy.w #!P4_info : jsr .set
+    jsl WarpPlayers                 ; the game's bands show the first two players in
+    ldx #$0004 : jsr .who           ; the game (warp4.asm); band 1's copy the third,
+    lda #$0000 : jsr .set
+    ldx #$0006 : jsr .who           ; band 2's copy the fourth
+    lda #$000C : jsr .set
     lda #$007F : sta.l !PPBank      ; upload in the next vblank
     lda.w #!M7Buf : ldy #$4600 : ldx #$0090 : jsr PPAdd
     lda.l !M7Queued : beq +         ; settings uploaded in this frame's vblank:
@@ -475,12 +478,18 @@ M7BFrame:
 .slot:                              ; A = slot -> A = slot * 24
     asl #3 : pha : asl : clc : adc 1,s : sta 1,s : pla
     rts
-; A = band offset in the slot (0 or 12), X = player pointer, Y = info block: one
-; $40-byte set
+; X = position * 2 in the warp list -> Y = that player's info block (0: nobody)
+.who:
+    ldy #$0000
+    txa : lsr : cmp.l !WarpN : bcs +
+    lda.l !WarpList,x : tax
+    lda.l WarpInfos,x : tay
++   rts
+; A = band offset in the slot (0 or 12), Y = info block of the player shown (0:
+; nobody, set off): one $40-byte set
 .set:
     clc : adc.l !M7Tmp : sta.l !M7Tmp2
     phy
-    phx
     ldx #$0000
 -   phx
     txa : clc : adc.l !M7Tmp2 : tax
@@ -491,14 +500,15 @@ M7BFrame:
     cpx #$000C : bcc -
     ldx #$0004 : jsr .zeros
     lda #$0C00 : jsr .word          ; colors 10 and 11 from the set
-    plx
-    lda $0000,x : beq +             ; player present: enabled, screen mirrored
+    lda 1,s : beq +                 ; somebody: enabled, screen mirrored
     lda #$0003
 +   jsr .byte
     ldx #$000D : jsr .zeros
     ldx #$0014 : jsr .zeros         ; colors 0-9 (not used)
     ply
-    lda $001A,y : and #$0003 : asl #2 : tax ; turtle -> $01:E16F (colors 10, 11)
+    tya : beq +                     ; (nobody: any colors)
+    lda $001A,y
++   and #$0003 : asl #2 : tax       ; turtle -> $01:E16F (colors 10, 11)
     lda.l $01E16F,x : jsr .word
     lda.l $01E171,x : jsr .word
     ldx #$0008                      ; colors 12-15
