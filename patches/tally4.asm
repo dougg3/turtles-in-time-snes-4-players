@@ -33,7 +33,7 @@ assert Enemies4End <= $20D000, "enemies4 code runs into tally4"
 T4Blocks:   dw $1911, $191B, !T4P3Block, !T4P4Block
 T4Infos:    dw !P1_info, !P2_info, !P3_info, !P4_info
 T4Headers:  dw $50B2, $50B5, $50B8, $50BB       ; columns 18, 21, 24, 27, row 5
-T4Labels:   dw $B756, $B759, T4Text3, T4Text4   ; "1P" "2P" (bank $01) "3P" "4P"
+T4Labels:   dw a16($01B756), a16($01B759), T4Text3, T4Text4   ; "1P" "2P" (bank $01) "3P" "4P"
 
 ; ---- counters: object (A) -> X = its player's block. Attack objects (companion B)
 ; and player objects; anything else counts for P2, as the original's else-branch.
@@ -86,9 +86,9 @@ T4Flash:
     ldy #$5104
 +   lda $1917 : beq .done
     dec $32,x : bne .done
-    lda #$0008 : sta $32,x
+    lda.w #read2($03B8A4) : sta $32,x      ; $0008 (PAL: $0006)
     lda $34,x : lsr
-    lda #$B73B
+    lda #a16($01B73B)
     phx
     bcs +
     jsl Orig_Text1
@@ -172,7 +172,7 @@ T4Init11:                           ; ($03:B571) also clear P3/P4 blocks
 T4Bonus:                            ; ($03:B60B) totals, perfect-clear bonus
     lda #$0001 : sta $32,x
     stz $34,x
-    lda #$0080 : sta $36,x
+    lda.w #read2($03B612) : sta $36,x      ; $0080 (PAL: $006A)
     inc $16,x
     lda #$0000 : sta.l !T4Tmp       ; sum of all totals
     ldy #$0000
@@ -240,10 +240,10 @@ T4Skip:                             ; ($03:B6AF) P2's column: drawn already
 
 T4Kills:                            ; ($03:B774) Scene 8: labels, header, +0 and +2
     jsr T4Busy : bcs .done
-    ldy #$5104 : lda #$B70D : phx : jsl Orig_Text2 : plx
-    ldy #$5144 : lda #$B728 : phx : jsl Orig_Text2 : plx
+    ldy #$5104 : lda #a16($01B70D) : phx : jsl Orig_Text2 : plx
+    ldy #$5144 : lda #a16($01B728) : phx : jsl Orig_Text2 : plx
     lda.w #.col : jsr T4ForEach
-    lda #$0050 : sta $3C,x
+    lda.w #read2($03B7CA) : sta $3C,x      ; $0050 (PAL: $0042)
     inc $16,x
 .done:
     rtl
@@ -255,10 +255,10 @@ T4Kills:                            ; ($03:B774) Scene 8: labels, header, +0 and
 
 T4Third:                            ; ($03:B7D8) Scene 8: +4
     jsr T4Busy : bcs .done
-    ldy #$5104 : lda #$B72D : phx : jsl Orig_Text2 : plx
-    ldy #$5144 : lda #$B75C : phx : jsl Orig_Text2 : plx
+    ldy #$5104 : lda #a16($01B72D) : phx : jsl Orig_Text2 : plx
+    ldy #$5144 : lda #a16($01B75C) : phx : jsl Orig_Text2 : plx
     lda.w #.col : jsr T4ForEach
-    lda #$0050 : sta $3C,x
+    lda.w #read2($03B80A) : sta $3C,x      ; $0050 (PAL: $0042)
     inc $16,x
 .done:
     rtl
@@ -268,10 +268,10 @@ T4Third:                            ; ($03:B7D8) Scene 8: +4
 
 T4Totals:                           ; ($03:B811) Scene 8: +6 bonus and +8 total
     jsr T4Busy : bcs .done
-    ldy #$5104 : lda #$B73B : phx : jsl Orig_Text2 : plx
-    ldy #$5144 : lda #$B748 : phx : jsl Orig_Text2 : plx
+    ldy #$5104 : lda #a16($01B73B) : phx : jsl Orig_Text2 : plx
+    ldy #$5144 : lda #a16($01B748) : phx : jsl Orig_Text2 : plx
     lda.w #.col : jsr T4ForEach
-    lda #$0048 : sta $3C,x
+    lda.w #read2($03B855) : sta $3C,x      ; $0048 (PAL: $003C)
     lda #$0001 : sta $36,x
     inc $16,x
 .done:
@@ -284,11 +284,11 @@ T4Totals:                           ; ($03:B811) Scene 8: +6 bonus and +8 total
 T4Count:                            ; ($03:B6D8) totals into the scores
     jsr T4Flash
     dec $36,x : bne .done
-    lda #$0002 : sta $36,x
+    lda.w #read2($03B6E0) : sta $36,x      ; $0002 (PAL: $0001)
     stz $32,x
     lda.w #.one : jsr T4ForEach
     lda $32,x : bne +
-    lda #$00C0 : sta $36,x
+    lda.w #read2($03B747) : sta $36,x      ; $00C0 (PAL: $00A0)
     inc $16,x
 .done:
     rtl

@@ -585,8 +585,8 @@ Sel4Portraits:
     lda !SelCand : clc : adc #$0008 : sta !SelCand
 +   phx
     lda !SelCand : asl : tay
-    lda $D686,y : tay               ; DB = $01
-    txa : asl #3 : clc : adc #$1F20 : tax   ; block $1F20 + $10 * turtle
+    lda.w a16($01D686),y : tay               ; DB = $01
+    txa : asl #3 : clc : adc.w #read2($049666) : tax   ; ($1F20; Japan $1EF0)   ; block $1F20 + $10 * turtle
     jsl Orig_PalScript
     plx
 .next:
@@ -609,7 +609,7 @@ Sel4Cursors:
     inc : sta !SelCount,y
     ldx !SelMe
     lda.l SelCursor,x : tax
-    lda $D6A6,y : sta $08,x         ; X of this turtle (DB = $01)
+    lda.w a16($01D6A6),y : sta $08,x         ; X of this turtle (DB = $01)
     lda !SelPos : beq +             ; 2nd-4th tag: beside the first
     dec : asl : sta !SelVar         ; slot * 2 (temporary)
     tya : sta !SelCand              ; turtle * 2
@@ -690,7 +690,7 @@ Sel4Done:
     jsr Sel4Portraits               ; show the final choices
     jsr Sel4Cursors
 .orig:
-    ldy #$91CD
+    ldy #a16($0191CD)
     jsl $00A152
     jml $0495C1
 

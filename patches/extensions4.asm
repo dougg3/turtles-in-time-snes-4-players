@@ -870,14 +870,14 @@ org $008190 : jsl PPLagNmi : nop   ; was REP #$30 / JSR $8271 (NMI during the la
 org $00FF70                         ; (free)
 PPLagNmi:
     rep #$30
-    jsr $8271
+    jsr.w a16($008271)
     pha
     lda.l !PPActive : beq +
     lda.w #!PPBoostFrames : sta.l !PPBoost
 +   pla
     rtl
 PPLagNmiEnd:
-assert PPLagNmiEnd <= $00FFB0, "PPLagNmi runs into the header"
+%below(PPLagNmiEnd, $00FFB0, "PPLagNmi runs into the header")
 org $0093A0 : jml PPWrap            ; was SEC / REP #$20 / RTL (OAM full)
 org $0092D5 : jml PPWrapPlayer      ; the same in the player draw path
 org $0091C7                         ; was STZ $00 / SEP #$20 / LDA $1E

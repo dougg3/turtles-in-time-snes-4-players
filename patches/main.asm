@@ -1,6 +1,24 @@
 ; Root patch file. Applied by scripts/build.sh to a copy of the clean ROM.
 lorom
 
+; a 16-bit ROM pointer written in long form ($BBAAAA), so the variant builds
+; (scripts/variants.py) can translate it like every other ROM address
+function a16(x) = x&$FFFF
+
+; layout checks that hold wherever the variant builds put the blocks: block [a, b)
+; and block [c, d) don't overlap; a block ending at e stays below limit in its bank
+macro apart(a, b, c, d, msg)
+    assert <b> <= <c> || <d> <= <a>, "<msg>"
+endmacro
+macro below(e, limit, msg)
+    assert ((<e>-1)>>16) != ((<limit>)>>16) || <e> <= <limit>, "<msg>"
+endmacro
+
+; JP=1 (scripts/build.sh jp): the Japanese version needs a few hooks of its own
+if not(defined("JP"))
+    !JP = 0
+endif
+
 incsrc "expand.asm"
 incsrc "ram.asm"
 incsrc "player_tables.asm"

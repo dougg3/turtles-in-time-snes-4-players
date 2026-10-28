@@ -82,7 +82,7 @@ Joypad4:
     lda $28 : ora $2A : ora $2C : ora $2E : sta !Combined_new
     rtl
 JoypadEnd:
-assert JoypadEnd <= $00FFB0, "input code overflows bank $00 padding"
+%below(JoypadEnd, $00FFB0, "input code overflows bank $00 padding")
 
 ; Readers of the old combined-new word $002E -> !Combined_new (operand byte only;
 ; all eight were seen reading WRAM $002E at runtime, i.e. D=$0000).
@@ -106,8 +106,12 @@ org $04A59D+1 : db !Combined_new   ; LDA $2E
 org $04A764+1 : db !Combined_new   ; LDA $2E
 org $04A89F+1 : db !Combined_new   ; LDA $2E
 org $04A8DB+1 : db !Combined_new   ; LDA $2E
-org $04D2EA+1 : db !Combined_new   ; LDA $2E
+if !JP == 0                         ; (code the Japanese version doesn't have)
+    org $04D2EA+1 : db !Combined_new   ; LDA $2E
+endif
 org $00A92E+1 : db !Combined_new   ; LDA $2E
 org $00AA4B+1 : db !Combined_new   ; LDA $2E
-org $038001+1 : db !Combined_new   ; LDA $2E
-org $038014+1 : db !Combined_new   ; LDA $2E
+if !JP == 0                         ; (code the Japanese version doesn't have)
+    org $038001+1 : db !Combined_new   ; LDA $2E
+    org $038014+1 : db !Combined_new   ; LDA $2E
+endif

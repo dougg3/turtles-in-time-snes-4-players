@@ -9,8 +9,8 @@
 ; In 1P/2P every other hook replays the original instructions.
 
 org $01FEA0                         ; bank $01 padding after player_tables.asm
-assert PlayerTablesEnd <= $01FEA0, "player tables run into info4 tables"
-InfoSelectMsg4: dw $E61B, $E627, $E61B, $E627   ; was $01:E764 ("1P/2P SELECT"; compact: SEL)
+%apart(PlayerCompanionA, PlayerTablesEnd, InfoSelectMsg4, InfoTablesEnd, "player tables run into info4 tables")
+InfoSelectMsg4: dw a16($01E61B), a16($01E627), a16($01E61B), a16($01E627)   ; was $01:E764 ("1P/2P SELECT"; compact: SEL)
 InfoObject4:    dw !P1_slot, !P2_slot, !P3_slot, !P4_slot   ; was $01:E7A6
 InfoTablesEnd:
 assert InfoTablesEnd <= $01FFC0, "info4 tables overflow bank $01 padding"
@@ -90,27 +90,27 @@ MsgCompact:
     pha
     jsr HudIndexX                   ; X = player index * 2
     pla
-    cmp #$E60F : bne +              ; PRESS START: "PRESS" and "START" take turns
+    cmp #a16($01E60F) : bne +              ; PRESS START: "PRESS" and "START" take turns
     lda.l !HudMsgPhase,x : eor #$0001 : sta.l !HudMsgPhase,x
     beq ++
     lda.w #!MsgPress
     bra .draw
 ++  lda.w #!MsgStart
     bra .draw
-+   cmp #$E633 : bne +              ; GAME OVER: "GAME", then GameOverTick alternates
++   cmp #a16($01E633) : bne +              ; GAME OVER: "GAME", then GameOverTick alternates
     lda #$0000 : sta.l !HudMsgPhase,x
     lda #$0030 : sta.l !HudMsgTimer,x
     lda.w #!MsgGame
     bra .draw
-+   cmp #$E63F : bne +
++   cmp #a16($01E63F) : bne +
     lda.w #!MsgCont
     bra .draw
-+   cmp #$E61B : beq .sel
-    cmp #$E627 : bne +
++   cmp #a16($01E61B) : beq .sel
+    cmp #a16($01E627) : bne +
 .sel:
     lda.w #!MsgSel
     bra .draw
-+   cmp #$E5ED : bne +
++   cmp #a16($01E5ED) : bne +
     lda.w #!MsgWait
     bra .draw
 +   lda.w #!MsgBlank
@@ -280,7 +280,7 @@ CountClear4:
     ldy #$0000
     cpx.w #!P1_info : beq +
     iny : iny
-+   lda $E59B,y : sta $14           ; DB = $01, as the original
++   lda.w a16($01E59B),y : sta $14           ; DB = $01, as the original
     jml $04D962
 .compact:
     phx
@@ -295,7 +295,7 @@ CountClear4:
 RespawnClear4:
     jsr HudCompact : bcs .compact
     jsl InfoIndexY
-    lda $E7FC,y : tax               ; DB = $01
+    lda.w a16($01E7FC),y : tax               ; DB = $01
     jml $009779
 .compact:
     jsr HudIndexX
@@ -430,7 +430,7 @@ GameOver4:
     cmp #$0002 : bcs .msg
     stz.w $00A8
 .msg:
-    lda #$E633
+    lda #a16($01E633)
     jml $04D61C
 
 ; ---- game-over box, every frame ($04:D634; was JSR $D644 / CMP $0030,X) ----
@@ -526,7 +526,11 @@ Join4:
 .p34:
     ora.l !SelSession : sta.l !SelSession   ; in this game (select4.asm, continue4.asm)
     lda $000E,x : bne ++
-    lda #$0004 : sta $000E,x
+    phx                             ; credits as P1/P2 get them ($00:A616: table by $1FEE)
+    lda $1FEE : and #$0003 : asl : tax
+    lda.l $019423,x
+    plx
+    sta $000E,x
     lda #$0001 : sta $0010,x
 ++  jsr HudFourMode : bcc ++       ; 3P/4P: anyone (re)joining gets a free turtle
     lda $001A,x

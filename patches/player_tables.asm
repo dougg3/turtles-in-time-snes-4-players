@@ -13,15 +13,15 @@
 org $01FE20
 PlayerCompanionA:   dw !P1_compA, !P2_compA, !P3_compA, !P4_compA   ; was $01:95D5 (slots 2/3)
 PlayerCompanionB:   dw !P1_compB, !P2_compB, !P3_compB, !P4_compB   ; was $01:96C3 (slots 4/6)
-PlayerInfoBlock:    dw $1A80, $1AC0, $1B20, $1B60   ; was $01:9CF7
+PlayerInfoBlock:    dw !P1_info, !P2_info, !P3_info, !P4_info   ; was $01:9CF7
 PlayerWord19DC:     dw !PlayerWordArray, !PlayerWordArray+2, !PlayerWordArray+4, !PlayerWordArray+6   ; was $01:9D77: addresses of the per-player
                                                     ; word array, relocated $19DC -> !PlayerWordArray (player_word_array.asm)
-PlayerBlock1F40:    dw $1F40, $1F50, !P3_block1F40, !P4_block1F40   ; was $01:9DB7 (meaning unknown)
-PlayerPtr8D6B:      dw $8D6B, $8D6F, $8D6B, $8D6F   ; was $01:9DBB (meaning unknown)
+PlayerBlock1F40:    dw read2($019DB7), read2($019DB9), !P3_block1F40, !P4_block1F40   ; was $01:9DB7 (meaning unknown)
+PlayerPtr8D6B:      dw read2($019DBB), read2($019DBD), read2($019DBB), read2($019DBD)   ; was $01:9DBB (meaning unknown)
 PlayerCompanionB2:  dw !P1_compB, !P2_compB, !P3_compB, !P4_compB   ; was $01:9E0F
 PlayerCompanionA2:  dw !P1_compA, !P2_compA, !P3_compA, !P4_compA   ; was $01:9FDB
 PlayerCompanionB3:  dw !P1_compB, !P2_compB, !P3_compB, !P4_compB   ; was $01:9FDF
-PlayerInfoBlock2:   dw $1A80, $1AC0, $1B20, $1B60   ; was $01:9FEB
+PlayerInfoBlock2:   dw !P1_info, !P2_info, !P3_info, !P4_info   ; was $01:9FEB
 PlayerVramBody:     dw $6000, $6300, $6000, $6300   ; was $01:C296
 PlayerVramPiece2:   dw $0000, $0300, $0000, $0300   ; was $01:C29A (added to $6200)
 PlayerSpawnOffsetX: dw $FFE8, $0018, $FFF4, $000C   ; was $01:9F19: start X offset; P3/P4 -$0C/+$0C (-$30 put P3 left of the playfield clamp)

@@ -127,7 +127,7 @@ ScrPlace4:
     lda #$00A0 : sta $0C,x
     stz $10,x
     ldy $14,x
-    lda $EBA6,y                     ; DB = $01, as the original
+    lda.w a16($01EBA6),y                     ; DB = $01, as the original
     jsl $04936E
     rts
 
@@ -189,12 +189,12 @@ ScrCompEffect4:
     ldx !P3_ptr : beq +
     lda $30,x : and #$FFBF : sta $30,x
     ldx.w #!P3_compA
-    ldy #$E898 : lda #$8000
+    ldy #a16($02E898) : lda #$8000
     jsr .effect
 +   ldx !P4_ptr : beq .done
     lda $30,x : and #$FFBF : sta $30,x
     ldx.w #!P4_compA
-    ldy #$E89C : lda #$8200
+    ldy #a16($02E89C) : lda #$8200
     jsr .effect
 .done:
     rtl
@@ -359,7 +359,7 @@ ScrCheer4:
     jsl Scr4Mode : bcc +
     ldx !P3_ptr : beq ++ : lda $14,x : beq ++ : jsl $04AEDA
 ++  ldx !P4_ptr : beq + : lda $14,x : beq + : jsl $04AEDA
-+   lda #$00F4
++   lda.w #read2($04AED4)          ; $00F4 (PAL versions: $00D4)
     jml $04AEB1
 
 ;---- $00:D546 (freeze end; was LDY $1864 / BNE $D556) ----
@@ -376,8 +376,8 @@ ScrPalEffect4:
 ; JSL $00A155) ----
 ScrFreeze4:
     ldy $1864 : cpy #$0004 : bcs +
-    ldx $FE40,y                     ; P1/P2: original (DB = $01)
-    lda $FE48,y
+    ldx.w PlayerBlock1F40&$FFFF,y                     ; P1/P2: original (DB = $01)
+    lda.w PlayerPtr8D6B&$FFFF,y
     tay
     jsl $00A155
     jml $00D500
@@ -427,11 +427,11 @@ ScrWarpOut4:
     jsl Scr4Mode : bcc .done
     ldx !P3_ptr : beq +
     lda.w #!P3_compA : sta.l !ScrSave1864
-    ldy #$E7EA : lda.w #!P3_compB
+    ldy #a16($02E7EA) : lda.w #!P3_compB
     jsr .one
 +   ldx !P4_ptr : beq .done
     lda.w #!P4_compA : sta.l !ScrSave1864
-    ldy #$E7FC : lda.w #!P4_compB
+    ldy #a16($02E7FC) : lda.w #!P4_compB
     jsr .one
 .done:
     rtl
@@ -493,26 +493,27 @@ CamCount4:
     lda $02
     rts
 
-macro CamSel(start, two, one, nobody)
-CamSel<start>:
+macro CamSel(name, start, two, one, nobody)
+CamSel<name>:
     jsl Scr4Mode : bcs ?four
     ldx $9E : bne ?p1
-    jml $04<nobody>                 ; original: P1 out
+    jml <nobody>                    ; original: P1 out
 ?p1:
-    jml $04<start>+5                ; original: LDX $A0 ...
+    jml <start>+5                   ; original: LDX $A0 ...
 ?four:
     jsr CamCount4
     cmp #$0002 : bcs ?two
-    jml $04<one>                    ; one (or nobody, X = 0 as the original)
+    jml <one>                       ; one (or nobody, X = 0 as the original)
 ?two:
-    jml $04<two>
+    jml <two>
 endmacro
 
-%CamSel(EA8F, EAF5, EAA1, EA9E)
-%CamSel(EB63, EBE4, EB75, EB72)
-%CamSel(ECDD, ECFD, ECEF, ECEC)
-%CamSel(ED1E, ED3E, ED30, ED2D)
-%CamSel(EC9F, ECA9, ECC2, ECBF)
+; (full addresses, so the variant builds translate them)
+%CamSel(EA8F, $04EA8F, $04EAF5, $04EAA1, $04EA9E)
+%CamSel(EB63, $04EB63, $04EBE4, $04EB75, $04EB72)
+%CamSel(ECDD, $04ECDD, $04ECFD, $04ECEF, $04ECEC)
+%CamSel(ED1E, $04ED1E, $04ED3E, $04ED30, $04ED2D)
+%CamSel(EC9F, $04EC9F, $04ECA9, $04ECC2, $04ECBF)
 
 ;---- CamA/CamB (players4 CamCalc, JSRed by the camera blocks; returns to them) ----
 CamCalcFar:

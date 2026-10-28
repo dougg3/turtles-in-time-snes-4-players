@@ -18,7 +18,7 @@ Orig_Shift2_EEC4  = $00EEC4     ; bodies of the second shift loop ($00:EEB2/EEB5
 Orig_Shift2_EEDD  = $00EEDD
 
 org $00FE70
-assert Players4End <= $00FE70, "players4 code runs into player_region code"
+%apart(UpdatePlayers4, Players4End, IsP34Main, PlayerRegionEnd, "players4 code runs into player_region code")
 
 ; X = object; Z set (and returns) if X is the P3/P4 player object (slots4.asm).
 IsP34Main:
@@ -118,23 +118,24 @@ Prio0Stub:
     jsl Prio0Extra
     rts
 PlayerRegionEnd:
-assert PlayerRegionEnd <= $00FFB0, "player_region code overflows bank $00 padding"
+%below(PlayerRegionEnd, $00FFB0, "player_region code overflows bank $00 padding")
 
 ; ---- $04:85F8 loop end: STZ $0456 / STZ $04C6 (P1/P2 +$56) -> also P3/P4 ----
 org $00FBF2
-assert PlayerHelpersEnd <= $00FBF2, "player helpers run into IsP1SideMain"
+%apart(InfoBlockForX, PlayerHelpersEnd, IsP1SideMain, Clear56End, "player helpers run into IsP1SideMain")
 ; $00:B6F8 (companion effect frames: P1's set, else P2's; was CPX #$0400): Z set for
 ; P1 and P3 (P3 draws from P1's tile numbers and palette, P4 from P2's)
 IsP1SideMain:
     cpx #!P1_slot : beq +
     cpx #!P3_slot
 +   rts
-assert pc() <= $00FBFC
+assert pc() <= Clear56
 org $00FBFC
 Clear56:
     jml Clear56Far
 Clear56End:
-assert Clear56End <= $00FC00, "Clear56 overflows its gap (players4 code at $00:FC00)"
+%apart(IsP1SideMain, Clear56End, UpdatePlayers4, Players4End, "Clear56 overflows its gap into players4 code")
+%apart(IsP1SideMain, Clear56End, IsP34Main, PlayerRegionEnd, "Clear56 runs into player_region code")
 
 ; ---- bank 3 stub for the $03:8730 priority pass ----
 org $03FF70

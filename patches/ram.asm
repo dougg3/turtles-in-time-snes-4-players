@@ -54,6 +54,22 @@
 !CharCand        = $1BB4   ; CharFree4: candidate turtle
 !CharOwn         = $1BB6   ; CharFree4: own player index * 2
 ; ($1BB8/$1BBA are not free: the Scene 9 boss uses them, $04:E58B)
+if !JP
+    ; Japan: its demo playback ($1B88-$1B93, cleared at stage start, $00:B057)
+    ; and the Scene 9 boss ($1B98/$1B9A, $04:E6C2) sit $20 lower than in the USA
+    ; version, inside P4's info block; $1D70-$1DAF is free in both. (Japan's Time
+    ; Trial retry menu, $04:DCF8, uses $1B22 = P3 info +$02: one player only.)
+    !P4_info     = $1D70
+    ; Japan: $1BA0-$1BAE is its text routine's RAM (USA $1BC0-$1BCE, $02:969A),
+    ; $1BB0-$1BBA its round select and title codes; $1BC0-$1BD7 has no code
+    ; references there (it is what the text routine left)
+    !HudMsgPhase = $1BC0
+    !HudMsgTimer = $1BC8
+    !InfoTmp     = $1BD0
+    !InfoCnt     = $1BD2
+    !CharCand    = $1BD4
+    !CharOwn     = $1BD6
+endif
 !HudColP3        = $1D4A   ; P3 box color 1 (by turtle, as the original does for P1/P2)
 !HudColP4        = $1D4C
 !EndPlayers      = $1D58   ; P3/P4 (bits 2/3) of the game that just ended (final screen)

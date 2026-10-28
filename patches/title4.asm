@@ -24,16 +24,16 @@ assert Scripts4End <= $20E000, "scripts4 code runs into title4"
 ; $04:B0CE (was the seven LDX/JSL $009779 calls and RTS; A/X 16-bit, DB = $01)
 TitleText4:
     jsr DetectMultitap : bcs .four
-    ldx #$85BD : jsl Orig_DrawString
-    ldx #$85C8 : jsl Orig_DrawString
-    ldx #$85D4 : jsl Orig_DrawString
-    ldx #$85DD : jsl Orig_DrawString
-    ldx #$85EA : jsl Orig_DrawString
-    ldx #$85F3 : jsl Orig_DrawString
-    ldx #$861A : jsl Orig_DrawString
+    ldx #a16($0185BD) : jsl Orig_DrawString
+    ldx #a16($0185C8) : jsl Orig_DrawString
+    ldx #a16($0185D4) : jsl Orig_DrawString
+    ldx #a16($0185DD) : jsl Orig_DrawString
+    ldx #a16($0185EA) : jsl Orig_DrawString
+    ldx #a16($0185F3) : jsl Orig_DrawString
+    ldx #a16($01861A) : jsl Orig_DrawString
     rtl
 .four:
-    ldx #$85F3 : jsl Orig_DrawString    ; copyright lines (bank $01)
+    ldx #a16($0185F3) : jsl Orig_DrawString    ; copyright lines (bank $01)
     phb : phk : plb
     ldx.w #T4OnePlayer : jsl Orig_DrawString
     ldx.w #T4Players : jsl Orig_DrawString

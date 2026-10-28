@@ -29,7 +29,7 @@ assert Scene8End <= $20FFFF, "scene8 code overflows bank $20"
 org $04918B                         ; 16 bytes up to the RTS at $919B (a branch target)
     jml HoverPlayers4
 HoverTick:                          ; X = object, Y = index * 2: one player ($919C past
-    jsr $91A1                       ; its pointer check)
+    jsr.w a16($0491A1)                       ; its pointer check)
     rtl
     nop #8
 assert pc() == $04919B

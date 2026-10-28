@@ -9,7 +9,7 @@
 
 ; Slot/info addresses: ram.asm.
 org $00FA00
-assert JoypadEnd <= $00FA00, "input code runs into the player helpers"
+%apart(Joypad4, JoypadEnd, InfoBlockForX, PlayerHelpersEnd, "input code runs into the player helpers")
 
 ; Y = info block of the player owning object X (default P2).
 ; Replaces: LDY #$1A80 / CPX #$0400 / BEQ / LDY #$1AC0
@@ -193,7 +193,7 @@ StatBlockForCompanionB_A:
 .done:
     rtl
 PlayerHelpersEnd:
-assert PlayerHelpersEnd <= $00FFB0, "player helpers overflow bank $00 padding"
+%below(PlayerHelpersEnd, $00FFB0, "player helpers overflow bank $00 padding")
 
 ; ---- pattern A sites (info block chosen by slot) ----
 ; Each original sequence is replaced by JSL + BRA to where the sequence ended.

@@ -17,7 +17,7 @@ Orig_InfoHud2       = $04AF7F
 Orig_InfoInit       = $0497AC   ; info +$20 lives, +$22, +$1C, +$2E
 
 org $00FC00
-assert PlayerHelpersEnd <= $00FC00, "player helpers run into players4 code"
+%apart(InfoBlockForX, PlayerHelpersEnd, UpdatePlayers4, Players4End, "player helpers run into players4 code")
 
 ; ---- per-frame update: original P1/P2, then P3/P4 (same calls as $00:AD7E-$ADA4) ----
 UpdatePlayers4:
@@ -197,7 +197,7 @@ OthersInPlay:
     clc
     rtl
 Players4End:
-assert Players4End <= $00FFB0, "players4 code overflows bank $00 padding"
+%below(Players4End, $00FFB0, "players4 code overflows bank $00 padding")
 
 ; ---- hooks ----
 org $04AF0F : jsl SpawnPlayers4             ; was JSL $04AF1A
@@ -287,6 +287,7 @@ org $048503 : jml SelectTarget              ; was LDA $9E / BEQ $856B
 ;   3P/4P: CamA = max X, CamB = min X over present players (always "A ahead")
 ; The first read of each block becomes JSR CamCalcY/CamCalcA (same 3 bytes),
 ; which computes CamA/CamB and returns the value the original instruction loaded.
+if !JP == 0
 org $04FF14
 CamCalcY:                   ; replaces LDY $0478
     jsr CamCalc
@@ -308,20 +309,56 @@ org $04EBE4 : jsr CamCalcY
 org $04ECA9 : jsr CamCalcA
 org $04ECFD : jsr CamCalcY
 org $04ED3E : jsr CamCalcY
+else
+; Japan: bank $04 has no free space. There the first read of each block and
+; the instruction after it (6 bytes, no branch lands between them) become a JSL to a
+; helper that does both; RTL keeps the flags of the replayed instruction.
+org $258000
+CamYLda:                    ; LDY $0478 / LDA $0408
+    jsl CamCalcFar
+    ldy !CamB : lda !CamA
+    rtl
+CamYCpy:                    ; LDY $0478 / CPY #$00C1
+    jsl CamCalcFar
+    ldy !CamB : cpy.w #read2($04EA4D)
+    rtl
+CamACmp:                    ; LDA $0408 / CMP $0478
+    jsl CamCalcFar
+    lda !CamA : cmp !CamB
+    rtl
+
+org $04EA49 : jsl CamYCpy : nop : nop
+org $04EAF5 : jsl CamYLda : nop : nop
+org $04EBE4 : jsl CamYLda : nop : nop
+org $04ECA9 : jsl CamACmp : nop : nop
+org $04ECFD : jsl CamYLda : nop : nop
+org $04ED3E : jsl CamYLda : nop : nop
+endif
+
 ; remaining reads: P1 X -> CamA, P2 X -> CamB (operands only)
 org $04EA56+1 : dw !CamA
 org $04EA63+1 : dw !CamB
-org $04EAF8+1 : dw !CamA
+if !JP == 0
+    org $04EAF8+1 : dw !CamA          ; (Japan: inside the 6 bytes above)
+endif
 org $04EAFB+1 : dw !CamB
-org $04EBE7+1 : dw !CamA
+if !JP == 0
+    org $04EBE7+1 : dw !CamA          ; (Japan: inside the 6 bytes above)
+endif
 org $04EBEA+1 : dw !CamB
 org $04EBEF+1 : dw !CamA
 org $04EBF2+1 : dw !CamB
-org $04ECAC+1 : dw !CamB
+if !JP == 0
+    org $04ECAC+1 : dw !CamB          ; (Japan: inside the 6 bytes above)
+endif
 org $04ECB1+1 : dw !CamB
-org $04ED00+1 : dw !CamA
+if !JP == 0
+    org $04ED00+1 : dw !CamA          ; (Japan: inside the 6 bytes above)
+endif
 org $04ED03+1 : dw !CamB
-org $04ED41+1 : dw !CamA
+if !JP == 0
+    org $04ED41+1 : dw !CamA          ; (Japan: inside the 6 bytes above)
+endif
 org $04ED44+1 : dw !CamB
 
 Orig_CEFE = $00CEFE
@@ -336,7 +373,7 @@ org $00CF18                         ; LDA $1ACE / BEQ / BPL $CF25 (7 bytes)
     nop
 
 org $00F920                         ; free bank-0 gap (players4 main area is full)
-assert JoypadEnd <= $00F920, "input code runs into PlaceP2P34"
+%apart(Joypad4, JoypadEnd, PlaceP2P34, PlaceP2P34End, "input code runs into PlaceP2P34")
 ; ---- other stage-intro placements ($04:F34E): place P2, then P3/P4 ----
 ; Replaces at $04:F356: LDX $A0 / BEQ $F35E / JSL $00DEB1 (8 bytes)
 Orig_StartPos = $00DEB1
@@ -351,7 +388,7 @@ PlaceP2P34:
 .done:
     rtl
 PlaceP2P34End:
-assert PlaceP2P34End <= $00FA00, "PlaceP2P34 overflows its gap"
+%apart(PlaceP2P34, PlaceP2P34End, InfoBlockForX, PlayerHelpersEnd, "PlaceP2P34 overflows its gap")
 org $04F356
     jsl PlaceP2P34
     nop : nop : nop : nop
@@ -360,23 +397,53 @@ org $04F356
 ; P1: place, JSR $EFFA (copy position), board $05C0 data $E7C6 (JSL $04:EFE0);
 ; then INC $1782; a later step does P2 ($06A0, $E7D8). P3/P4 are placed with P1's
 ; step and get boards in their companion-B slots (proof of concept: P1/P2 data).
+if !JP == 0
 org $04FF80
-assert CameraEnd <= $04FF80, "bank 04 helpers overlap"
 VehicleIntroP34:                    ; was INC $1782 (JSR, same 3 bytes)
     inc $1782
     lda !PlayerMode : and #$00FF : cmp #$0003 : bcc .done
     ldx !P3_ptr : beq +
     jsl Orig_StartPos
-    jsr $EFFA
-    ldx.w #!P3_compB : ldy #$E7C6
+    jsr.w a16($04EFFA)
+    ldx.w #!P3_compB : ldy #a16($02E7C6)
     jsl $04EFE0
 +   ldx !P4_ptr : beq .done
     jsl Orig_StartPos
-    jsr $EFFA
-    ldx.w #!P4_compB : ldy #$E7D8
+    jsr.w a16($04EFFA)
+    ldx.w #!P4_compB : ldy #a16($02E7D8)
     jsl $04EFE0
 .done:
     rts
 VehicleIntroEnd:
 assert VehicleIntroEnd <= $04FFFF, "bank 04 padding overflow"
+; (the variant builds put the two blocks elsewhere, in either order)
+assert CameraEnd <= VehicleIntroP34 || CamCalcY >= VehicleIntroEnd, "bank 04 helpers overlap"
 org $04EFCC : jsr VehicleIntroP34
+else
+; Japan: the hook takes INC $1782 / LDX $A0 (JSL, 5 bytes) and the helper lives in
+; bank $25; it reaches the bank-$04 subroutine $04:EFFA (ends in RTS) through
+; JsrEFFA, which returns via an RTL in bank $04
+org $258080
+assert CamACmp < $258080, "camera helpers run into the vehicle intro"
+VehicleIntroP34:
+    inc $1782
+    lda !PlayerMode : and #$00FF : cmp #$0003 : bcc .done
+    ldx !P3_ptr : beq +
+    jsl Orig_StartPos
+    jsl JsrEFFA
+    ldx.w #!P3_compB : ldy #a16($02E7C6)
+    jsl $04EFE0
++   ldx !P4_ptr : beq .done
+    jsl Orig_StartPos
+    jsl JsrEFFA
+    ldx.w #!P4_compB : ldy #a16($02E7D8)
+    jsl $04EFE0
+.done:
+    ldx $A0                         ; (replayed; the BEQ after the hook tests it)
+    rtl
+JsrEFFA:
+    pea.w a16($04AD09)-1            ; $04:EFFA's RTS "returns" to this RTL in bank $04
+    jml $04EFFA
+assert read1($04AD09) == $6B, "no RTL at $04:AD09"
+org $04EFCC : jsl VehicleIntroP34 : nop
+endif

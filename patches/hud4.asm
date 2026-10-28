@@ -376,7 +376,7 @@ HudGameOverFrame:
     lda $001A,x : asl
     jsl $04AF7F                     ; name (X = info)
     plx : phx
-    lda #$E633                      ; GAME OVER (as info state 5, $04:D616)
+    lda #a16($01E633)                      ; GAME OVER (as info state 5, $04:D616)
     jsl $04DBB7
     plx
 +   rts
@@ -397,13 +397,13 @@ HudName:
     pla
     phx
     tay
-    lda $E5A3,y                     ; DB = $01 here, as in the original
+    lda.w a16($01E5A3),y                     ; DB = $01 here, as in the original
     jml Orig_NameNext
 .compact:
     pla
     phx
     tay
-    lda $E5A3,y : sta $10           ; name string, $FF-terminated (4 chars)
+    lda.w a16($01E5A3),y : sta $10           ; name string, $FF-terminated (4 chars)
     jsr HudIndexX
     phx                             ; P3/P4: box color of this turtle
     tyx                             ; (Y = character * 2 = turtle * 2)
