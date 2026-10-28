@@ -34,8 +34,8 @@
 !PlayerHitFlags  = $1A58   ; 4 words, was $19B0 (2 words)
 !Tgt_list        = $1A60   ; up to 4 candidate pointers
 !Tgt_count       = $1A68
-!Tgt_min         = $1A6A
-!Tgt_max         = $1A6C
+!Tgt_min         = $1A6A   ; target selection: the nearest player
+!Tgt_max         = $1A6C   ; target selection: players kept near it
 !Tgt_best        = $1A6E
 !CamA            = $1A70   ; camera "leader" X
 !CamB            = $1A72   ; camera "trailer" X
@@ -74,10 +74,15 @@ endif
 !HudColP4        = $1D4C
 !EndPlayers      = $1D58   ; P3/P4 (bits 2/3) of the game that just ended (final screen)
 !FinTmp          = $1D5A
+!HudReArm        = $1DB0   ; HudReFrame: frames left to watch for a late HUD map load
+!HudReSaw        = $1DB2   ; HudReFrame: the load was seen running
+!HudFadeW        = $1DB4   ; HudFade: P1's box white as the game's fade shows it
+!HudFadeQ        = $1DB6   ; HudFade: scratch
+!HudReCheck      = $1DB8   ; HudReFrame: 1 VRAM read wanted (HudReRead), 2 frame there, 3 replaced
 
 ; ---- variables: $1C80-$1CFF (free) ----
 !HudFrameOn      = $1C80   ; non-zero: the compact 4-box frame is on screen
-!HudFadeK        = $1C82   ; NMI: screen fade (amount subtracted from each color channel)
+!HudFadeK        = $1C82   ; NMI: screen fade: 31 x s (HudFade: 31 = no fade)
 !HudFadeTmp      = $1C84
 !HudFadeOut      = $1C86
 !HudFadeP3       = $1C88   ; NMI: faded P3/P4 box color 1

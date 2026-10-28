@@ -748,6 +748,17 @@ PPShiftTab:
 
 ; ---- P3/P4 frame upload ($04:93A0 and $04:93D2; was JSL $008D8D): A = source,
 ; $00 = bank, Y = VRAM word, X = bytes. With the extensions active: to the extra tiles. ----
+; $04:93A0, the first piece of a new animation frame, right after $04:936B counted it
+; in $186A (uploads this frame). P3/P4's frames go to the extension port, not the game's
+; VRAM queue, so they don't count: with them counted, four turtles kept $186A at 2-4
+; and whatever waits for a quiet frame ($186A < 2) waited for good, e.g. the boss
+; health bar's redraw ($02:96C3; Baxter's bar stuck at one segment).
+PPStreamFirst:
+    pha
+    lda.l !PPActive : beq +
+    lda $1864 : cmp #$0004 : bcc +
+    dec $186A
++   pla
 PPStream:
     pha
     lda.l !PPActive : bne +
@@ -883,5 +894,5 @@ org $0092D5 : jml PPWrapPlayer      ; the same in the player draw path
 org $0091C7                         ; was STZ $00 / SEP #$20 / LDA $1E
     jsl PPEnd
     nop : nop
-org $0493A0 : jsl PPStream          ; was JSL $008D8D
+org $0493A0 : jsl PPStreamFirst     ; was JSL $008D8D
 org $0493D2 : jsl PPStream          ; was JSL $008D8D

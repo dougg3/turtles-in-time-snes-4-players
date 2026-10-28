@@ -492,7 +492,11 @@ Sel4Join:
     jsr SelLocked : bcc .free
 .free:
     lda.l SelInfo,x : tax
-    lda #$0004 : sta $000E,x        ; credits, as character select gives P1/P2
+    phx                             ; credits, as character select gives P1/P2 ($00:A616:
+    lda $1FEE : and #$0003 : asl : tax  ; table by $1FEE; was a fixed 4)
+    lda.l $019423,x
+    plx
+    sta $000E,x
     ldx !SelMe
     jsr Sel4Seat
     lda.w #!SndConfirm : jsl Orig_Sound

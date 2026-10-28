@@ -45,6 +45,10 @@ UpdatePlayers4:
 ; ---- spawn at stage start: original P1/P2, then P3/P4 (same as $04:AF1A-$AF6A) ----
 SpawnPlayers4:
     jsl HudQueueFrame       ; 3P/4P: compact HUD frame first (hud4.asm), contents follow
+    pha
+    lda.w #600 : sta.l !HudReArm    ; and again if the stage's HUD map loads later (HudReFrame)
+    lda #$0000 : sta.l !HudReSaw
+    pla
     jsl Orig_SpawnPlayers
     lda !PlayerMode : and #$00FF : cmp #$0003 : bcc .done
     ; P3/P4 in the game have their pointer set (turtle select or joining in play)
@@ -90,10 +94,14 @@ PlaceAllPlayers:
 .done:
     rtl
 ; ---- enemy target selection ($04:8503, called from 77 places) ----
-; 1P/2P: original code (first 4 bytes replayed here). 3P/4P: same rules over all
-; living players (pointer set and health +$4A non-zero): random when they are
-; within $50 px of each other (bit 0 of $18C0^$18C2 in the original; modulo the
-; count here), otherwise the nearest in X to the enemy (X = enemy object).
+; 1P/2P: original code (first 4 bytes replayed here). 3P/4P: the original's rules
+; over all living players (pointer set and health +$4A non-zero): the nearest in X
+; to the enemy (X = enemy object), and if others stand within $50 px of that one,
+; one of them at random (bit 0 of $18C0^$18C2 in the original; modulo the count
+; here). The random value changes rarely, so the choice holds. (Measuring "within
+; $50" over all players instead made one turtle standing apart switch everyone to
+; "nearest", and an enemy between two equally near turtles flipped targets every
+; frame and never attacked.)
 ; Returns Y = target, carry clear; carry set if nobody is targetable.
 Orig_Target_P1Absent = $04856B
 Orig_Target_Cont     = $048507
@@ -104,8 +112,6 @@ SelectTarget:
 +   jml Orig_Target_Cont
 .four:
     stz !Tgt_count
-    lda #$FFFF : sta !Tgt_min
-    stz !Tgt_max
     ldy $9E : jsr .consider
     ldy $A0 : jsr .consider
     ldy !P3_ptr : jsr .consider
@@ -113,19 +119,9 @@ SelectTarget:
     lda !Tgt_count : bne +
     sec                             ; nobody targetable
     rtl
-+   cmp #$0002 : bcs +
++   cmp #$0002 : bcs .nearest
     ldy !Tgt_list : clc : rtl       ; exactly one
-+   lda !Tgt_max : sec : sbc !Tgt_min
-    cmp #$0050 : bcs .nearest
-    lda $18C0 : eor $18C2           ; random among candidates
-    and #$0003                      ; 0-3, then at most one subtraction (count >= 2)
--   cmp !Tgt_count : bcc +
-    sec : sbc !Tgt_count : bra -
-+   asl : tay
-    lda !Tgt_list,y : tay
-    clc
-    rtl
-.nearest:
+.nearest:                           ; !Tgt_min = the pointer nearest in X
     lda #$FFFF : sta !Tgt_best
     ldy #$0000
 -   phy
@@ -135,25 +131,40 @@ SelectTarget:
 +   ply
     cmp !Tgt_best : bcs +
     sta !Tgt_best
-    lda !Tgt_list,y : sta !Tgt_min   ; reuse as "best pointer"
+    lda !Tgt_list,y : sta !Tgt_min
 +   iny : iny
     tya : lsr : cmp !Tgt_count : bcc -
-    ldy !Tgt_min
+    phx                             ; keep the players within $50 of it (in order)
+    ldy !Tgt_min : lda $0008,y : sta !Tgt_best
+    ldx #$0000 : stz !Tgt_max       ; X reads, !Tgt_max = how many kept
+-   ldy !Tgt_list,x
+    lda $0008,y : sec : sbc !Tgt_best
+    bpl + : eor #$FFFF : inc
++   cmp #$0050 : bcs +
+    phx
+    lda !Tgt_max : asl : tax
+    tya : sta !Tgt_list,x
+    plx
+    inc !Tgt_max
++   inx : inx
+    txa : lsr : cmp !Tgt_count : bcc -
+    plx
+    lda $18C0 : eor $18C2           ; random among them (just the nearest if alone)
+    and #$0003                      ; 0-3, then subtract while >= the count
+-   cmp !Tgt_max : bcc +
+    sec : sbc !Tgt_max : bra -
++   asl : tay
+    lda !Tgt_list,y : tay
     clc
     rtl
 .consider:                          ; Y = player pointer (0 = absent)
-    cpy #$0000 : beq ++
-    lda $004A,y : beq ++            ; health 0: not targetable
+    cpy #$0000 : beq +
+    lda $004A,y : beq +             ; health 0: not targetable
     lda !Tgt_count : asl : phx : tax
     tya : sta !Tgt_list,x
     plx
     inc !Tgt_count
-    lda $0008,y
-    cmp !Tgt_min : bcs +
-    sta !Tgt_min
-+   cmp !Tgt_max : bcc ++
-    sta !Tgt_max
-++  rts
++   rts
 ; ---- deaths / game over ----
 ; $00:CED5: "is the other player out?" -> "are all other players out?"
 ; Original: LDA $1864 / EOR #2 / TAY / LDX $9CF7,Y / LDA $000E,X / BMI $CEFE / RTL

@@ -194,10 +194,16 @@ HudNmi:
     rtl
 .on:
     phx
-    jsr HudCornerTiles
+    lda.l !HudReCheck : cmp #$0001 : bne +
+    jsr HudReRead                   ; (3P/4P only: 1P/2P NMIs keep the original timing)
++   jsr HudCornerTiles
     ldx $42                         ; X = the game's CGRAM buffer (bank $7E)
-    lda.l $7E000C,x : and #$001F    ; P1 box color 2 (white) as faded by the game:
-    eor #$001F : sta.l !HudFadeK    ; fade = 31 - red (subtracted from every channel)
+    lda.l $7E000C,x : sta.l !HudFadeW   ; P1 box colors 2 (white) and 3 (dark blue,
+    and #$001F : sta.l !HudFadeK        ; red 0) as faded by the game (HudFade)
+    lda.l $7E000E,x : and #$001F
+    eor #$FFFF : inc : clc : adc.l !HudFadeK : bpl +
+    lda #$0000
++   sta.l !HudFadeK
     lda.l !HudColP3 : jsr HudFade : sta.l !HudFadeP3
     lda.l !HudColP4 : jsr HudFade : sta.l !HudFadeP4
     sep #$20                        ; A 8-bit, X/Y 16-bit
@@ -239,6 +245,26 @@ HudNmi:
     plp
     jml PPFlush                     ; 3P/4P: extension uploads after the HUD's vblank work
 HudChannelBit: db $01, $02, $04, $08, $10, $20, $40, $80
+
+; ---- NMI (3P/4P, compact frame on), after a load during HudReFrame's watch: is the
+; compact frame still in VRAM? Box 1's top-right border (row 0, column 7: $25F0) is
+; $255F in the 2-box map. Only in vblank (VRAM reads during the picture are garbage):
+; else the next NMI. ----
+HudReRead:
+    sep #$20
+    lda $4212 : bpl .later
+    lda #$80 : sta $2115            ; increment after the high byte
+    rep #$20
+    lda #$5007 : sta $2116          ; the address write fetches the word
+    lda $2139
+    cmp #$25F0 : beq +
+    lda #$0003 : sta.l !HudReCheck  ; replaced
+    rts
++   lda #$0002 : sta.l !HudReCheck  ; still there
+    rts
+.later:
+    rep #$20
+    rts
 
 ; ---- corner tiles (vblank, after HudQueueFrame): write the five corner tiles. The
 ; font ($00:9B8C, all of BG3 tiles $100-$1FF) is loaded only at the title and when
@@ -289,25 +315,53 @@ HudCornerTiles:
 HudBadgeDest: dw $4000+(!HudBadgeTile1*8), $4000+(!HudBadgeTile2*8)
               dw $4000+(!HudBadgeTile3*8), $4000+(!HudBadgeTile4*8)
 
-; A = color -> A = color with !HudFadeK subtracted from each channel (at least 0),
-; as the game fades its palettes. 16-bit A.
+; A = color -> A = the color as the game's palette fade shows it now. The game fades
+; towards a color (white, black, then gray after the Technodrome): each channel is
+; c' = c + t * (target - c). P1's box white W (31) and dark blue D ($6940, red 0) are
+; in the game's buffer, faded: c' = W' - (31 - c) * s per channel, s = (W'.red -
+; D'.red) / 31 (!HudFadeK = W'.red - D'.red, !HudFadeW = W'). Unfaded: the color as
+; it is (a subtracted fade left P3/P4's colors on through the fade to white).
+; 16-bit A, X/Y kept.
+macro hud_fade_channel(shift)
+    lda.l !HudFadeTmp
+    if <shift> > 0
+        lsr #<shift>
+    endif
+    and #$001F : eor #$001F         ; 31 - c
+    sep #$20
+    sta.l $004202
+    lda.l !HudFadeK : sta.l $004203
+    rep #$20
+    nop : nop : nop                 ; the multiplier needs 8 cycles
+    lda.l $004216                   ; (31 - c) * 31s
+    sta.l !HudFadeQ
+    asl #5 : clc : adc.l !HudFadeQ  ; / 31: (x * 33 + 32) / 1024
+    clc : adc #$0020
+    xba : lsr #2 : and #$003F : sta.l !HudFadeQ
+    lda.l !HudFadeW
+    if <shift> > 0
+        lsr #<shift>
+    endif
+    and #$001F
+    sec : sbc.l !HudFadeQ : bpl ?pos
+    lda #$0000
+?pos:
+    if <shift> > 0
+        asl #<shift>
+    endif
+    ora.l !HudFadeOut : sta.l !HudFadeOut
+endmacro
 HudFade:
     sta.l !HudFadeTmp
-    lda.l !HudFadeK : bne +
-    lda.l !HudFadeTmp
+    lda.l !HudFadeK : cmp #$001F : bne +
+    lda.l !HudFadeW : cmp #$7FFF : bne +
+    lda.l !HudFadeTmp               ; not fading
     rts
-+   lda.l !HudFadeTmp : and #$001F
-    sec : sbc.l !HudFadeK : bpl +
-    lda #$0000
-+   sta.l !HudFadeOut                         ; red
-    lda.l !HudFadeTmp : lsr #5 : and #$001F
-    sec : sbc.l !HudFadeK : bpl +
-    lda #$0000
-+   asl #5 : ora.l !HudFadeOut : sta.l !HudFadeOut   ; green
-    lda.l !HudFadeTmp : xba : lsr #2 : and #$001F
-    sec : sbc.l !HudFadeK : bpl +
-    lda #$0000
-+   xba : asl #2 : ora.l !HudFadeOut          ; blue
++   lda #$0000 : sta.l !HudFadeOut
+    %hud_fade_channel(0)
+    %hud_fade_channel(5)
+    %hud_fade_channel(10)
+    lda.l !HudFadeOut
     rts
 
 ; ---- per-frame driver ($04:D34D, was JSL $04D39C): P1, then P3/P4 HUD updates ----
@@ -316,6 +370,7 @@ HudFade:
 ; the info state machine (join, continue, game over), then the score if dirty.
 HudDriver4:
     jsr HudGameOverFrame
+    jsr HudReFrame
     jsl Orig_HudP1
     pha
     jsr HudCompact
@@ -352,6 +407,58 @@ HudDriver4:
     jsl Orig_DrawScore
 .ret:
     rts
+
+; ---- a stage whose BG3 HUD map loads after the spawn queued the compact frame (Japan's
+; boss select, mode $1B: the 2-box map arrives in play and the compact frame was
+; gone). Armed by SpawnPlayers4 and at the stage intro (mode $0C) for 600 frames.
+; Once a load ($1D28) has run and ended, the NMI reads back one word of the frame
+; (HudReRead): only if the load replaced it, the frame again, every name and the
+; boxes of the players in the game. Other loads (Super Shredder's) leave it, and
+; the watch goes on. ----
+HudReFrame:
+    lda.l !HudReArm : beq .r        ; (1P/2P: these instructions only, as before)
+    dec : sta.l !HudReArm
+    jsr HudFourMode : bcc .r
+    lda.l !HudReCheck : bne .check
+    lda.l $001D28 : beq +
+    lda #$0001 : sta.l !HudReSaw
+    rts
++   lda.l !HudReSaw : beq .r
+    lda #$0000 : sta.l !HudReSaw
+    lda #$0001 : sta.l !HudReCheck  ; the load has ended: is the frame still there?
+    lda.l !HudReArm : cmp #$0010 : bcs .r
+    lda #$0010 : sta.l !HudReArm    ; (watching until the NMI has answered)
+.r:
+    rts
+.check:
+    cmp #$0002 : bcc .wait          ; 1: the NMI hasn't read it yet
+    beq .intact                     ; 2: the frame is still there
+    lda #$0000 : sta.l !HudReCheck : sta.l !HudReArm   ; 3: replaced
+    bra .redraw
+.intact:
+    lda #$0000 : sta.l !HudReCheck
+    rts
+.wait:
+    lda.l !HudFrameOn : bne .r      ; no compact frame on: the NMI won't read, so
+    lda #$0000 : sta.l !HudReCheck : sta.l !HudReArm   ; as before the check: again
+.redraw:
+    pha : phx : phy
+    jsl HudQueueFrame
+    ldx.w #!P1_info : lda.l $00009E : jsr .box
+    ldx.w #!P2_info : lda.l $0000A0 : jsr .box
+    ldx.w #!P3_info : lda.l !P3_ptr : jsr .box
+    ldx.w #!P4_info : lda.l !P4_ptr : jsr .box
+    ply : plx : pla
+.ret:
+    rts
+.box:                               ; A = the player's object pointer
+    pha : phx                       ; every box: its name (the stage intro drew all four,
+    lda $001A,x : asl               ; also of players not in it yet: MIKE / WAIT; a P2
+    jsl $04AF7F                     ; joining in play doesn't draw it again) (X = info)
+    plx : pla
+    beq +                           ; in the game (not info +$10, the select's confirm:
+    lda $002C,x : ora #$0007 : sta $002C,x   ; 0 for a player who joined in play): lives, bar, score follow
++   rts
 
 ; ---- game-over screen ($0D) in a 3P/4P game: its BG3 map has the 2-box HUD; once
 ; the map is decompressed ($1D28 = 0), the compact frame again, and for every player
@@ -600,7 +707,12 @@ HudModeSet:
     lda #$0000 : sta.l !HudFrameOn
     pla
 .set:
-    sta $70
+    cmp #$000C : bne +              ; stage intro: watch for a late HUD map load
+    pha                             ; (Japan's boss select starts the stage without
+    lda.w #600 : sta.l !HudReArm    ; the spawn, HudReFrame)
+    lda #$0000 : sta.l !HudReSaw
+    pla
++   sta $70
     lda #$0001
     jml $00A60B
 
@@ -621,3 +733,45 @@ org $04D9AC                         ; was LDA $002C,X / AND #$FFFB
     jml HudLives
     nop : nop
 org $04D799 : jml HudBar            ; was PHX / LDA $0022,X
+
+; ---- boss health bar queue ($02:9770; was PHX / LDX $1BCE / BEQ: slot A, else B / INC) ----
+; The bar is drawn later by a HUD object ($02:96C3) on a quiet frame. The original keeps
+; two requests and, with two pending, draws the newer then the older (the bar ends on
+; the old value); with three or more it draws nothing until the next boss. Four
+; turtles hit often enough for that, so in 3P/4P only the latest request is kept.
+; 1P/2P: the original.
+if !JP
+    !BarSlotY = $1BA6               ; Japan: the routine's RAM is $20 lower
+    !BarSlotA = $1BA8
+    !BarSlotY2 = $1BAA
+    !BarSlotA2 = $1BAC
+    !BarCount = $1BAE
+else
+    !BarSlotY = $1BC6
+    !BarSlotA = $1BC8
+    !BarSlotY2 = $1BCA
+    !BarSlotA2 = $1BCC
+    !BarCount = $1BCE
+endif
+org $25C000
+BarQueue4:                          ; A = health, Y = name string (16-bit)
+    pha
+    lda.l !PlayerMode : and #$00FF : cmp #$0003 : bcc .orig
+    pla
+    sty.w !BarSlotY : sta.w !BarSlotA
+    pha
+    lda #$0001 : sta.w !BarCount
+    pla
+    rtl
+.orig:
+    pla
+    phx
+    ldx.w !BarCount : beq +
+    sty.w !BarSlotY2 : sta.w !BarSlotA2
+    bra ++
++   sty.w !BarSlotY : sta.w !BarSlotA
+++  inc.w !BarCount
+    plx
+    rtl
+BarQueue4End:
+org $029770 : jml BarQueue4
