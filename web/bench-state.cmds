@@ -1,0 +1,42 @@
+# scripts/web_bench.sh: four bots in Scene 1, save states every 600 frames (runner.lua commands)
+load build/states/charsel_2p.mss
+wait 5
+poke 82 00 00
+wait 10
+mtap 1 start
+wait 4
+mtap 1 -
+wait 10
+mtap 2 start
+wait 4
+mtap 2 -
+wait 10
+tap 0 b 4
+wait 10
+tap 1 b 4
+wait 10
+mtap 1 b
+wait 4
+mtap 1 -
+wait 10
+mtap 2 b
+wait 4
+mtap 2 -
+wait 200
+tap 0 start 4
+wait 60
+tap 0 start 4
+wait 900
+ai 0 on
+ai 1 on
+ai 2 on
+ai 3 on
+god on
+wait 600
+save s1.mss
+wait 600
+save s2.mss
+wait 600
+save s3.mss
+wait 10
+end

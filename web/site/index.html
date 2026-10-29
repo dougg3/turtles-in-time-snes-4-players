@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Turtles in Time 4P</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>SNES Turtles in Time: four-player mod</h1>
+  <p class="sub">Running on an emulated SNES capable of displaying additional sprites. <a href="https://github.com/dougg3/turtles-in-time-snes-4-players">Source code and more info on GitHub</a></p>
+  <div class="layout">
+    <div>
+      <div class="screen">
+        <canvas id="screen" width="256" height="224"></canvas>
+        <div class="overlay" id="overlay">
+          <div class="drop" id="drop">
+            <p><b>Drop your ROM here</b><br><span class="sub">Teenage Mutant Ninja Turtles IV: Turtles in Time (USA, Europe, Australia or Japan), .sfc / .smc</span></p>
+            <p class="sub small">It is checked and patched in your browser and stored for next time. It is not uploaded.</p>
+            <!-- no accept= filter: iPadOS greys out .sfc/.smc (no registered file type); the SHA-1 check rejects wrong files -->
+            <p><input type="file" id="file"></p>
+          </div>
+          <div id="saved" hidden></div>
+          <button id="addrom" class="small" title="Choose (or drop here) a ROM of another version: USA, Europe, Australia or Japan" hidden>Add another version</button>
+          <button id="playlog" class="small" title="Watch a session saved with Save session log (uses your ROM)">Play back a session log</button>
+          <input type="file" id="logfile" hidden>
+          <div class="status" id="status">Loading emulator…</div>
+        </div>
+      </div>
+      <div class="playbar" id="playbar" hidden>
+        <div class="playrow">
+          <button id="playpause" class="small">Pause</button>
+          <button id="playfast" class="small" title="Fast-forward">×4</button>
+          <progress id="playprog" value="0" max="1"></progress>
+          <span id="playpos"></span>
+          <button id="playstop" class="small" title="Leave the playback and play">Stop</button>
+        </div>
+        <div class="playrow small"><span id="playwhen"></span><span id="playsync"></span></div>
+        <p class="note" id="playwarn" hidden></p>
+      </div>
+      <div class="below">
+        <div class="stats" id="stats"></div>
+        <button id="diag" class="small" title="Saves a file about this browser, its controllers and recent input (game keys only), to send with a bug report">Save diagnostics</button>
+        <button id="playlog2" class="small" title="Watch a session saved with Save session log (ends this game)" hidden>Play back a log</button>
+        <button id="savelog" class="small" title="Saves a file with this session's button presses and player setup (nothing else), so a bug can be replayed exactly" hidden>Save session log</button>
+        <button id="mute" class="small" title="Sound on/off (M)">Mute</button>
+        <button id="fullscreen" class="small" title="Fullscreen (F, or double-click the picture)" hidden>Fullscreen</button>
+      </div>
+    </div>
+    <div>
+      <div class="panel">
+        <h2>Players</h2>
+        <div id="players"></div>
+        <div id="spare"></div>
+        <p class="keys note" id="playnote" hidden>Playing back a session log: the players are as recorded.</p>
+        <p class="keys note" id="p2note" hidden>P2 is empty: choose <b>1 PLAYER</b> on the title screen (2 PLAYERS always brings P2 in). Other turtles can join in the stage with <b>Start</b>; bots do that by themselves.</p>
+        <p class="keys" id="padhint">Gamepads appear when you press a button on them.</p>
+        <label class="check"><input type="checkbox" id="botgod"> Bots can't lose health</label>
+        <p class="keys" id="botnote">Bots automatically join and pick their turtles.</p>
+      </div>
+    </div>
+  </div>
+  <footer>
+    Runs on a modified <a href="https://github.com/nesdev-org/MesenCE">MesenCE</a>: <a href="https://github.com/dougg3/mesen-tmnt4p">mesen-tmnt4p</a>.
+    Not affiliated with or endorsed by Konami or the license holders of the Teenage Mutant Ninja Turtles franchise.
+  </footer>
+</main>
+
+<div class="modal" id="mapper" hidden>
+  <div class="dialog">
+    <h2>Buttons: <span id="mapTitle"></span></h2>
+    <p class="prompt" id="mapPrompt"></p>
+    <div class="mapgrid" id="mapGrid"></div>
+    <p class="raw" id="mapRaw"></p>
+    <div class="maprow">
+      <button id="mapAll" class="primary">Map all</button>
+      <button id="mapSkip" hidden>Skip</button>
+      <span class="spacer"></span>
+      <button id="mapDiag" title="Saves a file about this browser, its controllers and recent input, to send with a bug report">Save diagnostics</button>
+      <button id="mapReset">Reset to defaults</button>
+      <button id="mapDone">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- no inline script or style: the Content-Security-Policy (web/serve.py) forbids them -->
+<script src="app.js"></script>
+<script src="mesen.js"></script>
+</body>
+</html>

@@ -2,9 +2,10 @@
 # Download and build the tools into tools/, at the versions in scripts/tools.sh:
 #   scripts/setup.sh        Asar (tools/bin/asar), Flips (tools/bin/flips) and mesen-tmnt4p
 #                           (tools/mesen-tmnt4p/Mesen, with the .NET SDK it needs in tools/dotnet)
+#   scripts/setup.sh web    also the Emscripten SDK (tools/emsdk), for scripts/build_web.sh
 # Nothing is installed outside tools/. Run it again after a version changes; finished
-# steps are skipped. Needs git, curl, make, cmake, clang, Python 3 and the SDL2 development
-# files (see README.md).
+# steps are skipped. Needs git, curl, make, cmake, clang, Python 3, xz and the SDL2
+# development files (see README.md).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 . "$root/scripts/tools.sh"
@@ -82,4 +83,12 @@ if ! stamp mesen-tmnt4p "$MESEN_TMNT4P_COMMIT"; then
   echo "$MESEN_TMNT4P_COMMIT" > "$tools/.mesen-tmnt4p"
 fi
 
+if [ "${1:-}" = web ] && ! stamp emsdk "$EMSDK_VERSION"; then
+  echo "Emscripten SDK $EMSDK_VERSION"
+  [ -d "$tools/emsdk/.git" ] || git clone -q "$EMSDK_REPO" "$tools/emsdk"
+  git -C "$tools/emsdk" pull -q
+  "$tools/emsdk/emsdk" install "$EMSDK_VERSION" > /dev/null
+  "$tools/emsdk/emsdk" activate "$EMSDK_VERSION" > /dev/null
+  echo "$EMSDK_VERSION" > "$tools/.emsdk"
+fi
 echo "tools ready"
