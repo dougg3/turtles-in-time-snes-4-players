@@ -1,6 +1,7 @@
 // Session logs: recording (page) and replay (bench); format in session.h.
 #include "session.h"
 #include <algorithm>
+#include <cstdlib>
 #include <sstream>
 #include "Shared/Emulator.h"
 #include "Shared/MemoryType.h"
@@ -69,6 +70,24 @@ void SessionRecorder::Poll(uint32_t poll, PollInput& in)
 	}
 }
 
+void SessionRecorder::BotsRestart(uint32_t poll, uint32_t seed, const char seats[4], bool god)
+{
+	char line[96];
+	snprintf(line, sizeof(line), "%u b %u %.4s %d\n", poll, seed, seats, god ? 1 : 0);
+	std::lock_guard<std::mutex> l(_lock);
+	if(!_full) {
+		_text += line;
+	}
+}
+
+void SessionRecorder::StateLoaded(uint32_t poll)
+{
+	std::lock_guard<std::mutex> l(_lock);
+	if(!_full) {
+		_text += std::to_string(poll) + " x\n";
+	}
+}
+
 string SessionRecorder::Snapshot()
 {
 	std::lock_guard<std::mutex> l(_lock);
@@ -113,6 +132,22 @@ bool SessionReplay::Parse(const string& text, string& error)
 			cur.God = god != 0;
 		} else if(kind == "h") {
 			l >> std::hex >> e.Hash;
+		} else if(kind == "b") {
+			string seats;
+			int god = 0;
+			l >> e.Seed >> seats >> god;
+			if(seats.size() != 4) {
+				error = "line " + std::to_string(n) + ": bad seats";
+				return false;
+			}
+			memcpy(e.In.Seats, seats.data(), 4);
+			e.In.God = god != 0;
+		} else if(kind == "x") {
+			// another computer's state from here on: the replay can't follow
+			LoadedAt = e.Poll;
+			End = e.Poll ? e.Poll - 1 : 0;
+			ended = true;
+			break;
 		} else if(kind == "end") {
 			End = e.Poll;
 			ended = true;
@@ -126,7 +161,9 @@ bool SessionReplay::Parse(const string& text, string& error)
 			return false;
 		}
 		e.Kind = kind[0];
-		e.In = cur;
+		if(e.Kind != 'b') {
+			e.In = cur;
+		}
 		_events.push_back(e);
 	}
 	auto seed = std::find_if(Header.begin(), Header.end(), [](auto& h) { return h.first == "seed"; });
@@ -134,7 +171,15 @@ bool SessionReplay::Parse(const string& text, string& error)
 		error = "no seed line";
 		return false;
 	}
-	Seed = (uint32_t)std::stoul(seed->second);
+	// strtoul, not stoul: a bad number in a file is an error here, not an exception (none in the web build)
+	const char* digits = seed->second.c_str();
+	char* end = nullptr;
+	unsigned long value = strtoul(digits, &end, 10);
+	if(end == digits || *end) {
+		error = "bad seed line";
+		return false;
+	}
+	Seed = (uint32_t)value;
 	if(!ended) {
 		error = "no end line (cut off?)";
 		return false;
@@ -153,6 +198,9 @@ void SessionReplay::Poll(uint32_t poll, PollInput& in)
 {
 	for(; _next < _events.size() && _events[_next].Poll <= poll; _next++) {
 		const Event& e = _events[_next];
+		if(e.Kind == 'b') {
+			continue;   // (BotsRestart, before the poll)
+		}
 		if(e.Kind == 'h') {
 			if(e.Poll == poll) {
 				HashesChecked++;
@@ -169,4 +217,17 @@ void SessionReplay::Poll(uint32_t poll, PollInput& in)
 		}
 	}
 	in = _cur;
+}
+
+bool SessionReplay::BotsRestart(uint32_t poll, uint32_t& seed, PollInput& seats)
+{
+	// the log has it before the poll's other lines, and Poll(poll - 1) stopped short of them
+	for(size_t i = _next; i < _events.size() && _events[i].Poll == poll; i++) {
+		if(_events[i].Kind == 'b') {
+			seed = _events[i].Seed;
+			seats = _events[i].In;
+			return true;
+		}
+	}
+	return false;
 }

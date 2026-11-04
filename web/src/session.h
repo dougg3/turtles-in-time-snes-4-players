@@ -6,6 +6,10 @@
 //   <poll> p <P1> <P2> <P3> <P4>   pads (SNES button bits, hex), when they change
 //   <poll> s <seats> <god>         seats ("hb-b": person, bot, out) and god mode, when they change
 //   <poll> h <hash>                work RAM hash (FNV-1a 64) at the start of the poll, every 60
+//   <poll> b <seed> <seats> <god>  online: the bots start over with this seed before the poll
+//                                  (a join or a resync; their Lua state can't be copied)
+//   <poll> x                       online: this computer loaded another's state before the poll
+//                                  (a resync); a replay ends just before it
 //   <poll> end                     the last poll recorded
 // The page adds header lines ("key value") before them; the core writes "seed <n>".
 #pragma once
@@ -36,13 +40,16 @@ public:
 	static constexpr size_t MaxSize = 64 << 20;   // ~ a week of play; then recording stops
 	void Start(Emulator* emu, uint32_t seed);
 	void Poll(uint32_t poll, PollInput& in) override;
+	// online events, before the poll's input (emulator thread)
+	void BotsRestart(uint32_t poll, uint32_t seed, const char seats[4], bool god);
+	void StateLoaded(uint32_t poll);
 	// the log so far (any thread)
 	string Snapshot();
 };
 
 class SessionReplay : public InputLog
 {
-	struct Event { uint32_t Poll; char Kind; PollInput In; uint64_t Hash; };
+	struct Event { uint32_t Poll; char Kind; PollInput In; uint64_t Hash; uint32_t Seed; };
 	vector<Event> _events;
 	size_t _next = 0;
 	PollInput _cur;
@@ -51,6 +58,7 @@ class SessionReplay : public InputLog
 
 public:
 	uint32_t Seed = 0, End = 0;
+	int64_t LoadedAt = -1;   // the poll before which the recording computer loaded another's state
 	vector<std::pair<string, string>> Header;   // "key value" lines, in order
 	uint32_t HashesChecked = 0;
 	int64_t FirstMismatch = -1, LastMismatch = -1;   // polls of the first/last hash that differed
@@ -59,4 +67,6 @@ public:
 	bool Parse(const string& text, string& error);
 	void Start(Emulator* emu);
 	void Poll(uint32_t poll, PollInput& in) override;
+	// before running poll `poll`: true (with the seed, seats and god mode) if the bots start over
+	bool BotsRestart(uint32_t poll, uint32_t& seed, PollInput& seats);
 };

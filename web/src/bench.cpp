@@ -98,7 +98,7 @@ static int Replay(int argc, char* argv[])
 		return 1;
 	}
 	string script = ReadFile(argv[4]);
-	vector<std::pair<uint32_t, string>> saves, dumps, shots;
+	vector<std::pair<uint32_t, string>> saves, dumps, shots, loads;
 	for(int i = 5; i < argc; i++) {
 		if(string(argv[i]) == "--save" && i + 2 < argc) {
 			saves.push_back({ (uint32_t)atoi(argv[i + 1]), argv[i + 2] });
@@ -108,6 +108,9 @@ static int Replay(int argc, char* argv[])
 			i += 2;
 		} else if(string(argv[i]) == "--wram" && i + 2 < argc) {
 			dumps.push_back({ (uint32_t)atoi(argv[i + 1]), argv[i + 2] });
+			i += 2;
+		} else if(string(argv[i]) == "--load" && i + 2 < argc) {
+			loads.push_back({ (uint32_t)atoi(argv[i + 1]), argv[i + 2] });
 			i += 2;
 		}
 	}
@@ -150,6 +153,13 @@ static int Replay(int argc, char* argv[])
 	IConsole* console = emu->GetConsoleUnsafe();
 	auto t = Clock::now();
 	while(pads.Polls() <= log.End) {
+		// a save state instead of the game so far (e.g. made with --save on another build of the
+		// patch, to try a fix on a recorded session; the hashes differ from then on)
+		for(auto& [poll, file] : loads) {
+			if(poll == pads.Polls()) {
+				printf("%s: %s\n", file.c_str(), emu->GetSaveStateManager()->LoadState(file, false) ? "loaded" : "FAILED");
+			}
+		}
 		for(auto& [poll, file] : saves) {
 			if(poll == pads.Polls()) {
 				printf("%s: %s\n", file.c_str(), emu->GetSaveStateManager()->SaveState(file, false) ? "saved" : "FAILED");
@@ -178,6 +188,16 @@ static int Replay(int argc, char* argv[])
 				std::ofstream(file, std::ios::binary).write((const char*)w.Memory, w.Size);
 			}
 		}
+		// an online session: the bots started over here (a join or a resync), as on the page
+		uint32_t seed;
+		PollInput seats;
+		if(!script.empty() && log.BotsRestart(pads.Polls(), seed, seats)) {
+			memcpy(bots.Seats, seats.Seats, 4);
+			bots.God = seats.God;
+			if(!bots.Reload(seed)) {
+				printf("bots: %s\n", bots.Error.c_str());
+			}
+		}
 		console->RunFrame();
 	}
 	double sec = std::chrono::duration<double>(Clock::now() - t).count();
@@ -185,6 +205,9 @@ static int Replay(int argc, char* argv[])
 		log.FirstMismatch < 0 ? "all match" : (std::to_string(log.Mismatches) + " differ, polls " + std::to_string(log.FirstMismatch) + " to " + std::to_string(log.LastMismatch)).c_str());
 	if(!bots.Error.empty()) {
 		printf("bots stopped: %s\n", bots.Error.c_str());
+	}
+	if(log.LoadedAt >= 0) {
+		printf("the recording computer loaded another computer's state at poll %lld (a resync): the replay ends there\n", (long long)log.LoadedAt);
 	}
 	fflush(stdout);
 	_exit(log.FirstMismatch < 0 ? 0 : 2);

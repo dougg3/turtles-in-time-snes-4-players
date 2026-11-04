@@ -24,9 +24,36 @@ LuaBots* LuaBots::Self(lua_State* lua)
 	return *(LuaBots**)lua_getextraspace(lua);
 }
 
+bool LuaBots::Reload(uint32_t seed)
+{
+	if(!_emu) {
+		return false;
+	}
+	if(_lua) {
+		lua_close(_lua);
+		_lua = nullptr;
+	}
+	for(vector<int>& c : _callbacks) {
+		c.clear();
+	}
+	_execCallback = -1;
+	if(g_hooked == this) {
+		SnesExecHook = nullptr;
+		g_hooked = nullptr;
+	}
+	Error.clear();
+	for(Override& o : Pads) {
+		o = {};
+	}
+	string script = _script, name = _name;
+	return Load(_emu, script, name, seed);
+}
+
 bool LuaBots::Load(Emulator* emu, const string& script, const string& name, uint32_t seed)
 {
 	_emu = emu;
+	_script = script;
+	_name = name;
 	ConsoleMemoryInfo wram = emu->GetMemory(MemoryType::SnesWorkRam);
 	_wram = (uint8_t*)wram.Memory;
 	_wramSize = wram.Size;
@@ -51,7 +78,7 @@ bool LuaBots::Load(Emulator* emu, const string& script, const string& name, uint
 	}
 
 	const luaL_Reg api[] = {
-		{ "read", Read }, { "write", Write }, { "setInput", SetInput }, { "getState", GetState },
+		{ "read", Read }, { "write", Write }, { "setInput", SetInput }, { "getInput", GetInput }, { "getState", GetState },
 		{ "addEventCallback", AddEventCallback }, { "addMemoryCallback", AddMemoryCallback },
 		{ "seats", GetSeats }, { "drawString", Nothing }, { "displayMessage", Nothing }, { nullptr, nullptr },
 	};
@@ -194,6 +221,23 @@ int LuaBots::SetInput(lua_State* lua)
 	return 0;
 }
 
+// emu.getInput(port, subport): the person's buttons this poll (every button, true or false), as
+// the poll's input has them: the same on every computer online and in a replay (the devices'
+// own state isn't: it is the previous poll's here, and after a join it's the saved state's)
+int LuaBots::GetInput(lua_State* lua)
+{
+	LuaBots* self = Self(lua);
+	lua_Integer port = luaL_checkinteger(lua, 1);
+	lua_Integer subport = luaL_optinteger(lua, 2, 0);
+	int p = port == 0 ? 0 : (port == 1 && subport >= 0 && subport < 3 ? 1 + (int)subport : -1);
+	lua_newtable(lua);
+	for(int bit = 0; bit < 12; bit++) {
+		lua_pushboolean(lua, p >= 0 && ((self->Input[p] >> bit) & 1));
+		lua_setfield(lua, -2, ButtonNames[bit]);
+	}
+	return 1;
+}
+
 // emu.getState(): the bots only read "cpu.y", in their exec callback
 int LuaBots::GetState(lua_State* lua)
 {
@@ -277,6 +321,7 @@ bool WebPads::SetInput(BaseControlDevice* device)
 		_poll++;
 		if(_bots) {
 			memcpy(_bots->Seats, _in.Seats, 4);
+			memcpy(_bots->Input, _in.Masks, sizeof _bots->Input);
 			_bots->God = _in.God;
 			_bots->FrameEnd();
 		}

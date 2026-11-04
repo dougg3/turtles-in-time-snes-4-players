@@ -18,12 +18,19 @@ public:
 	// Set by WebPads once per poll, before the bots run (from the page, or from a session log).
 	char Seats[4] = { 'h', 'h', 'h', 'h' };
 	uint8_t God = 0;
+	// this poll's buttons per player (the people's input: the page's, or the session log's),
+	// before the bots' overrides: emu.getInput. Set by WebPads with Seats.
+	uint32_t Input[4] = {};
 	// set when the script failed (load or callback error): the bots stop, people keep playing
 	string Error;
 
 	// Load the script (with the emulator lock held, ROM loaded); seed: math.randomseed, so a
 	// session log can replay the bots exactly. False + Error on failure.
 	bool Load(Emulator* emu, const string& script, const string& name, uint32_t seed);
+	// Start the script over (a fresh Lua state, the same script) with a new seed: online play
+	// does this on every computer at the same poll when one joins mid-game, since the script's
+	// own state can't be copied over
+	bool Reload(uint32_t seed);
 	// Mesen fires EndFrame and then InputPolled back to back at the end of each frame
 	// (SnesPpu at the NMI scanline, then SnesConsole::ProcessEndOfFrame -> UpdateInputState),
 	// with nothing run in between; the input provider calls this at that point.
@@ -37,6 +44,7 @@ public:
 
 private:
 	lua_State* _lua = nullptr;
+	string _script, _name;
 	Emulator* _emu = nullptr;
 	uint8_t* _wram = nullptr;
 	uint32_t _wramSize = 0;
@@ -53,6 +61,7 @@ private:
 	static int Read(lua_State* lua);
 	static int Write(lua_State* lua);
 	static int SetInput(lua_State* lua);
+	static int GetInput(lua_State* lua);
 	static int GetState(lua_State* lua);
 	static int AddEventCallback(lua_State* lua);
 	static int AddMemoryCallback(lua_State* lua);
@@ -100,4 +109,6 @@ public:
 	WebPads(const PageInput* page, LuaBots* bots, InputLog* log = nullptr) : _page(page), _bots(bots), _log(log) {}
 	bool SetInput(BaseControlDevice* device) override;
 	uint32_t Polls() const { return _poll; }
+	// a computer joining an online game mid-way continues from the others' poll
+	void SetPolls(uint32_t poll) { _poll = poll; }
 };
