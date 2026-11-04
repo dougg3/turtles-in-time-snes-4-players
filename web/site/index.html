@@ -16,7 +16,8 @@
         <canvas id="screen" width="256" height="224"></canvas>
         <div class="overlay" id="overlay">
           <div class="drop" id="drop">
-            <p><b>Drop your ROM here</b><br><span class="sub">Teenage Mutant Ninja Turtles IV: Turtles in Time (USA, Europe, Australia or Japan), .sfc / .smc</span></p>
+            <p><b id="droptitle">Drop your ROM here</b><br><span class="sub" id="dropsub">Teenage Mutant Ninja Turtles IV: Turtles in Time (USA, Europe, Australia or Japan), .sfc / .smc</span></p>
+            <p class="dropwhy" id="dropwhy" hidden></p>
             <p class="sub small">It is checked and patched in your browser and stored for next time. It is not uploaded.</p>
             <!-- no accept= filter: iPadOS greys out .sfc/.smc (no registered file type); the SHA-1 check rejects wrong files -->
             <p><input type="file" id="file"></p>
@@ -25,6 +26,38 @@
           <button id="addrom" class="small" title="Choose (or drop here) a ROM of another version: USA, Europe, Australia or Japan" hidden>Add another version</button>
           <button id="playlog" class="small" title="Watch a session saved with Save session log (uses your ROM)">Play back a session log</button>
           <input type="file" id="logfile" hidden>
+          <div class="netrow" id="netchoose">
+            <button id="nethost" class="small" title="Play with people on other computers: each needs their own ROM">Host an online game</button>
+            <button id="netfind" class="small" title="See the public games you can join (for a friend's game, open the link they sent you)">Join an online game</button>
+          </div>
+          <div class="netrow" id="nethostpick" hidden>
+            <span class="netpick">Choose the version to host: everyone in the game plays with it.</span>
+            <button id="netpickcancel" class="small">Cancel</button>
+          </div>
+          <div class="netbox" id="netgames" hidden>
+            <div class="netrow netgameshead"><b>Public games</b><button id="netgamesclose" class="small">Close</button></div>
+            <div id="netgamelist"></div>
+            <div class="status" id="netgamestatus"></div>
+            <p class="sub small">A friend's private game isn't listed: open the link they sent you.</p>
+            <p class="sub small">Online play is peer-to-peer: your IP address is shared with the other computers in your game.</p>
+          </div>
+          <div class="netbox" id="netbox" hidden>
+            <div class="netrow netver"><span id="netver"></span><button id="netback" class="small" title="Leave this online game and go back to the start screen">Leave</button></div>
+            <div class="netlink" id="netlink" hidden><input id="netlinktext" readonly><button id="netcopy" class="small">Copy link</button></div>
+            <div class="netrow">
+              <span class="netme">You are <b id="netme">…</b> <button id="netrename" class="small" title="The lobby gives you another name">New name</button></span>
+              <label>Players here <select id="netplayers" title="How many people play at this computer (one seat each; set their controllers in the Players panel)"><option value="">Choose…</option><option value="0">0 (watch)</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+            </div>
+            <div id="netpeers"></div>
+            <div class="netrow" id="nethostonly" hidden>
+              <label class="check" title="Listed under Join an online game, so anyone can join (you can remove people)"><input type="checkbox" id="netpublic"> Public game</label>
+              <label class="check"><input type="checkbox" id="netbots" checked> Bots in empty seats</label>
+              <button id="netstart" class="primary" disabled>Start the game</button>
+            </div>
+            <div class="netwhy" id="netwhy"></div>
+            <div class="status" id="netstatus"></div>
+            <p class="sub small">Online play is peer-to-peer: your IP address is shared with the other computers in your game.</p>
+          </div>
           <div class="status" id="status">Loading emulator…</div>
         </div>
       </div>
@@ -39,12 +72,16 @@
         <div class="playrow small"><span id="playwhen"></span><span id="playsync"></span></div>
         <p class="note" id="playwarn" hidden></p>
       </div>
+      <div class="netwarn" id="netwarn" hidden></div>
+      <div class="netinfo" id="netinfo" hidden></div>
       <div class="below">
         <div class="stats" id="stats"></div>
         <button id="diag" class="small" title="Saves a file about this browser, its controllers and recent input (game keys only), to send with a bug report">Save diagnostics</button>
         <button id="playlog2" class="small" title="Watch a session saved with Save session log (ends this game)" hidden>Play back a log</button>
         <button id="savelog" class="small" title="Saves a file with this session's button presses and player setup (nothing else), so a bug can be replayed exactly" hidden>Save session log</button>
         <button id="getrom" class="small" title="Saves this game's patched ROM, to play in the desktop emulator mesen-tmnt4p (other emulators lack the extra sprites that 3 or 4 players need)" hidden>Download ROM</button>
+        <button id="netrejoin" class="small primary" title="Connect to the online game again" hidden>Rejoin</button>
+        <button id="netleave" class="small" title="Leave the online game (a bot takes over your seats)" hidden>Leave game</button>
         <button id="mute" class="small" title="Sound on/off (M)">Mute</button>
         <button id="fullscreen" class="small" title="Fullscreen (F, or double-click the picture)" hidden>Fullscreen</button>
       </div>
@@ -57,7 +94,8 @@
         <p class="keys note" id="playnote" hidden>Playing back a session log: the players are as recorded.</p>
         <p class="keys note" id="p2note" hidden>P2 is empty: choose <b>1 PLAYER</b> on the title screen (2 PLAYERS always brings P2 in). Other turtles can join in the stage with <b>Start</b>; bots do that by themselves.</p>
         <p class="keys" id="padhint">Gamepads appear when you press a button on them.</p>
-        <label class="check"><input type="checkbox" id="botgod"> Bots can't lose health</label>
+        <label class="check" id="botgodrow"><input type="checkbox" id="botgod"> Bots can't lose health</label>
+        <p class="keys" id="botgodnote" hidden>Bots can't lose health in this game (the host's choice).</p>
         <p class="keys" id="botnote">Bots automatically join and pick their turtles.</p>
       </div>
     </div>
@@ -86,6 +124,7 @@
 </div>
 
 <!-- no inline script or style: the Content-Security-Policy (web/serve.py) forbids them -->
+<script src="net.js"></script>
 <script src="app.js"></script>
 <script src="mesen.js"></script>
 </body>

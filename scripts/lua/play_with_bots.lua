@@ -11,6 +11,8 @@
 -- The bots
 --   - leave the controllers alone on the title screen and menus (you do the
 --     menus; with your pad mapped to every port it works on all of them);
+--   - P1 a bot: on the title screen and menus P1 gets the first person's buttons
+--     (only P1 can start the game);
 --   - on the turtle select (four-player select active): P3/P4 join with START; all
 --     bots confirm a turtle only after you have confirmed yours (you pick first);
 --   - in play: walk to the nearest enemy, line up, attack; walk right when the
@@ -663,7 +665,23 @@ emu.addEventCallback(function()
         t.start = rd16(SLOT[p] + 0x14) == 0 and tap(p, 60)
       end
       -- other screens (title, menus, game over, ending): controllers left alone, so
-      -- your pad works the menus on whichever ports it is mapped to.
+      -- your pad works the menus on whichever ports it is mapped to. P1 a bot there: the
+      -- first person's buttons work P1 too (only P1 can start the game; online, nobody
+      -- else's pad reaches P1)
+      if not t and p == 0 then
+        for q = 1, 3 do
+          if role[q] == "h" then
+            local ok, i = pcall(emu.getInput, PAD[q][1], PAD[q][2])
+            -- (pressed buttons only, added to P1's own: the others stay nil, so P1's
+            -- own pad still works too)
+            if ok and type(i) == "table" then
+              t = {}
+              for _, k in ipairs(ALL_BUTTONS) do if i[k] == true then t[k] = true end end
+            end
+            break
+          end
+        end
+      end
       -- Mesen's setInput ignores its 2nd argument: (input, _, port, subport)
       if t then emu.setInput(t, 0, PAD[p][1], PAD[p][2]) end
     end

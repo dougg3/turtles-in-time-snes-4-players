@@ -1,14 +1,15 @@
 'use strict';
-// The page's logic. Loaded before mesen.js, which reads the global Module.
+// The page's logic. Loaded after net.js (online play) and before mesen.js, which reads the global Module.
 // No innerHTML with outside data: controller names come from the device, so all text goes in
 // with textContent (and the Content-Security-Policy forbids inline scripts anyway).
 // accepted ROMs (SHA-1 of the clean dump) and the four-player patch for each
-const ROMS = {
+// (no prototype: ROMS[x] with x from a peer or a file is only ever one of these, never 'constructor')
+const ROMS = Object.assign(Object.create(null), {
   '4f8fc0f45023e0339e501054b253c33f479a001a': { name: 'USA', patch: 'tmnt4-4p-patch.bps', fps: 60.0988 },
   '59add584f16b607607348e65c245ca6ad7a5fcb8': { name: 'Europe', patch: 'tmnt4-4p-eu-patch.bps', fps: 50.007 },
   'c4ba9b0fd1b40a228e6bb1170ec227dac5b83ce5': { name: 'Australia', patch: 'tmnt4-4p-au-patch.bps', fps: 50.007 },
   '514e7fb70e1e5e06c5a873262e145a555655d62d': { name: 'Japan', patch: 'tmnt4-4p-jp-patch.bps', fps: 60.0988 },
-};
+});
 const BUILD = 'dev';   // scripts/build_web.sh puts the repository's commit here
 const W = 256, H = 224;
 // Mesen SNES controller bits: A B X Y L R Select Start Up Down Left Right
@@ -84,7 +85,7 @@ addEventListener('error', (e) => remember(messages, 300, `error: ${e.message} ($
 addEventListener('unhandledrejection', (e) => remember(messages, 300, 'unhandled: ' + e.reason));
 
 // ---------- emulator module ----------
-let ready = false, running = false;
+let ready = false, running = false, onlineStarted = false;
 var Module = {
   print: (t) => { console.log('[mesen]', t); remember(messages, 300, 'mesen: ' + t); },
   printErr: (t) => console.warn('[mesen]', t),
@@ -133,7 +134,15 @@ function applyBps(source, patch) {
 // the patched ROM, for the desktop emulator (mesen-tmnt4p): tmnt4-4p.sfc, tmnt4-4p-eu.sfc, ...
 const romName = (known) => known.patch.replace(/-patch\.bps$/, '.sfc');
 async function patchRom(bytes, known) {
-  return applyBps(bytes, new Uint8Array(await (await fetch(known.patch)).arrayBuffer()));
+  // online: the patch the other computers compared (net.js netInit), not a newer download
+  if (net.started) {
+    const p = net.patches && net.patches[known.patch];
+    if (!p) throw new Error(known.patch + ' was not loaded');
+    return applyBps(bytes, p);
+  }
+  const res = await fetch(known.patch);
+  if (!res.ok) throw new Error(known.patch + ': HTTP ' + res.status);
+  return applyBps(bytes, new Uint8Array(await res.arrayBuffer()));
 }
 let running4p = null;   // {known, rom} of the game running, for Download ROM
 async function downloadRom(bytes, known) {
@@ -143,6 +152,10 @@ async function downloadRom(bytes, known) {
 
 async function useRom(bytes, remember) {
   if (!ready) { status('Emulator still loading, try again in a moment.', 'bad'); return; }
+  // (an online game starts once: a ROM dropped on the page while it starts or runs isn't another)
+  if (net.go) { if (onlineStarted) return; onlineStarted = true; }
+  const online = net.go;   // (a ROM chosen just before the start: once its awaits are done, the
+                           // start's own call has the game)
   if (bytes.length % 1024 === 512) bytes = bytes.subarray(512);   // copier header
   const hash = await sha1(bytes);
   const known = ROMS[hash];
@@ -150,7 +163,20 @@ async function useRom(bytes, remember) {
     status(`That's not a Turtles in Time ROM this page knows (SHA-1 ${hash.slice(0, 12)}…; USA, Europe, Australia and Japan work).`, 'bad');
     return;
   }
-  if (remember) { await saveRom(hash, bytes); showSaved(); }
+  if (remember) {
+    await saveRom(hash, bytes);
+    // a new ROM on the start screen: saved, then the player chooses (here, host or join online)
+    if (!net.role && !replay) {
+      try { localStorage.setItem('tmnt4p.lastRom', hash); } catch (e) {}
+      await showSaved();
+      status(`${known.name} ROM saved in this browser. Play on this computer, or host or join an online game.`, 'ok');
+      return;
+    }
+    showSaved();
+  }
+  if (net.go && !online) return;
+  // online (net.js): the game starts when the host starts it, for everyone at once
+  if (net.role && !net.go) { if (!replay) netRomChosen(hash, bytes); return; }
   // a session log plays back only on the version it was recorded with
   if (replay && hash !== replayRom()) {
     const want = ROMS[replayRom()];
@@ -160,7 +186,12 @@ async function useRom(bytes, remember) {
   }
   status(`ROM verified (${known.name}). Applying the four-player patch…`, 'ok');
   let rom;
-  try { rom = await patchRom(bytes, known); } catch (e) { status('Patch failed: ' + e.message, 'bad'); return; }
+  try { rom = await patchRom(bytes, known); } catch (e) {
+    status('Patch failed: ' + e.message, 'bad');
+    // (online: the others would wait for this computer, and it for nothing)
+    if (net.go) netHalt("The four-player patch couldn't be applied on this computer: " + e.message, false);
+    return;
+  }
   running4p = { known, rom };
   try { localStorage.setItem('tmnt4p.lastRom', hash); } catch (e) {}
   session.rom = hash;
@@ -171,7 +202,7 @@ async function useRom(bytes, remember) {
   if (replay) startReplay();
   // the session's seed: power-on RAM and the bots' random numbers (in the session log; a
   // playback uses the log's)
-  else Module._web_seed(crypto.getRandomValues(new Uint32Array(1))[0]);
+  else Module._web_seed(net.started ? net.seed : crypto.getRandomValues(new Uint32Array(1))[0]);
   // sound queued ahead of the picture: ?audio=N samples instead of 3072 (64 ms); lower
   // means less delay, higher fewer dropouts on a slow computer (?stats shows them)
   const aq = parseInt(new URLSearchParams(location.search).get('audio'), 10);
@@ -181,8 +212,8 @@ async function useRom(bytes, remember) {
   Module._web_start(ptr, rom.length);
   session.started = new Date().toISOString();
   running = true;
-  $('savelog').hidden = !!replay;
-  $('playlog2').hidden = false;
+  $('savelog').hidden = !!replay || net.joined;   // joined mid-way: nothing to replay from power-on
+  $('playlog2').hidden = net.started;   // online: it would leave the game
   $('getrom').hidden = false;
   $('overlay').classList.add('hidden');
 }
@@ -230,16 +261,24 @@ async function showSaved() {
   savedRoms = await loadRoms();
   let last = null;
   try { last = localStorage.getItem('tmnt4p.lastRom'); } catch (e) {}
-  const order = Object.keys(ROMS).filter((h) => savedRoms[h]);
+  // online, a guest is only offered the game's version (net.js)
+  const order = Object.keys(ROMS).filter((h) => savedRoms[h] && netRomAllowed(h));
   if (order.includes(last)) order.splice(order.indexOf(last), 1), order.unshift(last);
   const list = $('saved');
   list.replaceChildren();
+  // online: the host picks the game's version before the game exists ("Host with ..."); once
+  // this computer has the game's version, no ROM choice is shown (the lobby says the version)
+  const lobby = net.role && !net.started;
+  if (lobby && net.rom) {
+    list.hidden = $('addrom').hidden = $('drop').hidden = true;
+    return order;
+  }
   order.forEach((hash, i) => {
     const row = document.createElement('div');
     row.className = 'savedrom';
     const go = document.createElement('button');
     go.className = i === 0 ? 'primary' : '';
-    go.textContent = `Start (${ROMS[hash].name})`;
+    go.textContent = net.choosing ? `Host with ${ROMS[hash].name}` : lobby ? `Use (${ROMS[hash].name})` : `Play on this computer (${ROMS[hash].name})`;
     go.onclick = () => useRom(new Uint8Array(savedRoms[hash]), false);
     const forget = document.createElement('button');
     forget.className = 'small';
@@ -265,14 +304,16 @@ async function showSaved() {
 $('addrom').onclick = () => $('file').click();
 async function startUp() {
   const order = await showSaved();
-  if (!replay) { status(order.length ? '' : 'Choose your ROM to start.'); return; }
+  // (a link that didn't work: net.js said why, maybe before the emulator had loaded)
+  if (!replay) { if (!net.backMsg) status(order.length || net.role ? '' : 'Choose your ROM to begin.'); return; }
   const want = replayRom();
   if (savedRoms[want]) useRom(new Uint8Array(savedRoms[want]), false);
   else if (ROMS[want]) status(`Choose your ${ROMS[want].name} ROM to play back the session log.`, 'ok');
   else status("This session log was recorded with a version of the game this page doesn't know.", 'bad');
 }
 
-$('file').onchange = async (e) => { const f = e.target.files[0]; if (f) useRom(new Uint8Array(await f.arrayBuffer()), true); };
+// (the input is cleared after reading: it doesn't keep showing a refused file, and the same file can be chosen again)
+$('file').onchange = async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) useRom(new Uint8Array(await f.arrayBuffer()), true); };
 const drop = $('drop');
 $('overlay').ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
 $('overlay').ondragleave = () => drop.classList.remove('over');
@@ -287,9 +328,14 @@ $('overlay').ondrop = async (e) => {
 // without a device is a bot unless set to Empty; seatChoice remembers Bot/Empty chosen by hand.
 async function loadBots() {
   try {
-    const res = await fetch('bots.lua');
-    if (!res.ok) throw new Error('bots.lua: HTTP ' + res.status);
-    const src = new TextEncoder().encode(await res.text());
+    // online: the script the other computers compared (net.js netInit), not a newer download
+    let src = net.started ? net.botsSrc : null;
+    if (net.started && !src) throw new Error('bots.lua was not loaded');
+    if (!src) {
+      const res = await fetch('bots.lua');
+      if (!res.ok) throw new Error('bots.lua: HTTP ' + res.status);
+      src = new Uint8Array(await res.arrayBuffer());   // (as online, net.js netInit: the same hash)
+    }
     session.bots = await sha1(src);
     const ptr = Module._malloc(src.length);
     Module.HEAPU8.set(src, ptr);
@@ -307,7 +353,7 @@ try {
 } catch (e) {}
 const role = (p) => (deviceOn(p) ? 'h' : seatChoice[p] === '-' ? '-' : 'b');
 function pushSeats() {
-  if (!ready) return;
+  if (!ready || net.started) return;   // online: the seats are the host's, set once (net.js)
   let packed = 0;
   for (let p = 0; p < 4; p++) packed |= role(p).charCodeAt(0) << (p * 8);
   Module._web_seats(packed >>> 0, botGod ? 1 : 0);
@@ -366,7 +412,20 @@ async function chooseLog(file) {
     let bytes = new Uint8Array(await file.arrayBuffer());
     if (bytes[0] === 0x1F && bytes[1] === 0x8B) {
       if (typeof DecompressionStream === 'undefined') throw new Error('this browser cannot unpack .gz files');
-      bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+      // unpacked a piece at a time, up to 64 MB (a real log is far smaller; a crafted one could be gigabytes)
+      const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+      const parts = [];
+      let size = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > 64 << 20) { reader.cancel(); throw new Error('that file unpacks to more than a session log can be'); }
+        parts.push(value);
+      }
+      bytes = new Uint8Array(size);
+      let o = 0;
+      for (const p of parts) { bytes.set(p, o); o += p.length; }
     }
     text = new TextDecoder().decode(bytes);
     if (!text.startsWith('tmnt4p-session') || !/\n\d+ end/.test(text)) throw new Error("that's not a session log");
@@ -535,7 +594,12 @@ const assign = { kb: 0 };
 function padName(p) { return p.id.replace(/\s*\(.*?\)\s*/g, ' ').trim() || 'Gamepad'; }
 const deviceOn = (p) => Object.keys(assign).find((k) => assign[k] === p && deviceNames()[k]);
 // a player a new device can take: no device, and not set to Bot or Empty by hand
-function nextFreePlayer() { for (let i = 0; i < 4; i++) if (!deviceOn(i) && !seatChoice[i]) return i; return -1; }
+function nextFreePlayer() {
+  if (net.started) return netFreeSeat();
+  if (net.role) { for (let i = 0; i < net.players; i++) if (!deviceOn(i)) return i; return -1; }   // online lobby: this computer's players
+  for (let i = 0; i < 4; i++) if (!deviceOn(i) && !seatChoice[i]) return i;
+  return -1;
+}
 if (seatChoice[0]) assign.kb = nextFreePlayer();   // P1 saved as a bot or empty
 addEventListener('gamepadconnected', (e) => {
   const key = 'pad' + e.gamepad.index;
@@ -561,11 +625,141 @@ function deviceNames() {
 // bot (the bots leave the title screen and menus to people)
 const target = (dev) => (assign[dev] >= 0 ? assign[dev] : role(0) === 'b' ? 0 : -1);
 
+// online: the devices under the players, each with its buttons. One player here: every device
+// (they all play it); several: the ones no player has (they don't play)
+function netSpareDevices(names, everyDevice, onPlayer) {
+  $('spare').replaceChildren();
+  for (const [key, name] of Object.entries(names)) {
+    if (!everyDevice && onPlayer(assign[key])) continue;
+    const row = el('div', 'dev');
+    const label = el('span', '', name + (everyDevice ? ' · plays' : ' · not playing')); label.title = name;
+    const mapBtn = el('button', 'small', 'Buttons'); mapBtn.onclick = () => openMapper(key, name);
+    row.append(label, mapBtn); $('spare').appendChild(row);
+  }
+}
 // one row per player: who plays it (a device, Bot or Empty), and the device's buttons. During a
 // playback: the recorded players, as text.
 function renderPlayers() {
   const names = deviceNames();
   $('players').replaceChildren();
+  if (net.role && !net.started) {
+    // online, before the game: this computer's players and their devices; the seats (P1-P4)
+    // are handed out at the start, in order (the host's players first)
+    if (net.players === null) $('players').appendChild(el('p', 'keys', 'Choose how many play at this computer (Players here, on the picture).'));
+    else if (!net.players) $('players').appendChild(el('p', 'keys', 'Watching: nobody plays at this computer.'));
+    // one player here: every device plays (no choosing); each device's buttons under it
+    if (net.players === 1) {
+      const row = el('div', 'player');
+      row.append(el('div', 'tag local', '1'), el('div', 'recorded', 'You · any of your controllers'));
+      $('players').appendChild(row);
+    }
+    for (let i = 0; i < (net.players === 1 ? 0 : net.players); i++) {
+      const row = el('div', 'player');
+      const sel = el('select');
+      sel.title = 'Who plays as player ' + (i + 1) + ' of this computer';
+      sel.appendChild(Object.assign(el('option', '', 'Nobody yet'), { value: '' }));
+      for (const [key, dname] of Object.entries(names)) {
+        const on = assign[key];
+        sel.appendChild(Object.assign(el('option', '', dname + (on >= 0 && on !== i && on < net.players ? ` (now ${on + 1})` : '')), { value: key }));
+      }
+      sel.value = deviceOn(i) || '';
+      sel.onchange = () => {
+        for (const k of Object.keys(assign)) if (assign[k] === i) assign[k] = -1;
+        if (sel.value) assign[sel.value] = i;
+        renderPlayers();
+      };
+      row.append(el('div', 'tag local', String(i + 1)), sel);
+      const dev = deviceOn(i);
+      if (dev) { const mapBtn = el('button', 'small', 'Buttons'); mapBtn.onclick = () => openMapper(dev, names[dev]); row.appendChild(mapBtn); }
+      $('players').appendChild(row);
+    }
+    $('players').appendChild(el('p', 'keys', net.players > 1 ? 'Online: each player here gets a seat (P1–P4) when the game starts; the host\'s players come first.'
+      : 'Online: you get a seat (P1–P4) when the game starts; any of your controllers plays it.'));
+    netSpareDevices(names, net.players === 1, (k) => k >= 0 && k < net.players);
+    $('p2note').hidden = true;
+    $('padhint').hidden = navigator.getGamepads().some(Boolean);
+    return;
+  }
+  if (net.started) {
+    // online: our seats with their devices (one seat: every device plays it), the others as text
+    for (let i = 0; i < 4; i++) {
+      const row = el('div', 'player');
+      row.appendChild(el('div', 'tag p' + (i + 1), 'P' + (i + 1)));
+      const name = net.names[i] || '';
+      if (net.dropped[i]) row.appendChild(el('div', 'recorded', `Bot (${name || 'player'} left)`));
+      else if (net.owners[i] === net.id && net.mine.length > 1) {
+        const sel = el('select');
+        sel.title = 'Who plays P' + (i + 1) + ' here';
+        sel.appendChild(Object.assign(el('option', '', 'Nobody'), { value: '' }));
+        for (const [key, dname] of Object.entries(names)) {
+          const on = assign[key];
+          sel.appendChild(Object.assign(el('option', '', dname + (on >= 0 && on !== i ? ` (now P${on + 1})` : '')), { value: key }));
+        }
+        sel.value = deviceOn(i) || '';
+        sel.onchange = () => {
+          for (const k of Object.keys(assign)) if (assign[k] === i) assign[k] = -1;
+          if (sel.value) assign[sel.value] = i;
+          renderPlayers();
+        };
+        row.appendChild(sel);
+      } else if (net.owners[i] === net.id) row.appendChild(el('div', 'recorded', `You${name ? ' (' + name + ')' : ''} · any of your controllers`));
+      else if (net.owners[i]) row.appendChild(el('div', 'recorded', name || 'Online player'));
+      else row.appendChild(el('div', 'recorded', net.seats[i] === 'b' ? 'Bot' : 'Empty'));
+      // (one seat here: each device's buttons are in the list below)
+      const dev = net.owners[i] === net.id && net.mine.length > 1 && deviceOn(i);
+      if (dev) { const mapBtn = el('button', 'small', 'Buttons'); mapBtn.onclick = () => openMapper(dev, names[dev]); row.appendChild(mapBtn); }
+      const other = net.owners[i];
+      if (other && other !== net.id && !net.dropped[i] && amHost() && net.peers.has(other) && !net.peers.get(other).gone) {
+        const kick = el('button', 'small', 'Remove');
+        kick.title = 'Take this computer out of the game (a bot takes over); it cannot come back in';
+        kick.onclick = () => netKick(other);
+        row.appendChild(kick);
+      }
+      $('players').appendChild(row);
+    }
+    // the game takes in P2-P4 when they press Start (P1 is in from the title screen)
+    // the host: the computers that watch, so it can take one out too (a watcher's false reports
+    // and hashes are the host's to stop)
+    if (amHost()) {
+      for (const id of net.members) {
+        const p = net.peers.get(id);
+        if (id === net.id || !p || p.gone || net.owners.some((o, s) => o === id && !net.dropped[s])) continue;
+        const row = el('div', 'player extra');
+        row.appendChild(el('div', 'recorded', 'Watching: ' + peerName(id)));
+        const kick = el('button', 'small', 'Remove');
+        kick.title = 'Take this computer out of the game; it cannot come back in';
+        kick.onclick = () => netKick(id);
+        row.appendChild(kick);
+        $('players').appendChild(row);
+      }
+      // (and those in the room but not in the game: they take its places, nobody else can come in)
+      for (const [id, p] of net.peers) {
+        if (net.members.has(id) || p.gone) continue;
+        const row = el('div', 'player extra');
+        row.appendChild(el('div', 'recorded', 'In the room, not in the game: ' + peerName(id)));
+        const kick = el('button', 'small', 'Remove');
+        kick.title = 'Take this computer out of the room; it cannot come back in';
+        kick.onclick = () => netKick(id);
+        row.appendChild(kick);
+        $('players').appendChild(row);
+      }
+      // (and those in the lobby's room with no connection here: they take places too)
+      for (const id of lobbyOnly()) {
+        const row = el('div', 'player extra');
+        row.appendChild(el('div', 'recorded', 'In the room, not connected: ' + peerName(id)));
+        const kick = el('button', 'small', 'Remove');
+        kick.title = 'Take this computer out of the room; it cannot come back in';
+        kick.onclick = () => netKick(id);
+        row.appendChild(kick);
+        $('players').appendChild(row);
+      }
+    }
+    if (net.mine.some((s) => s > 0)) $('players').appendChild(el('p', 'keys', 'P2–P4: press Start to join in once the stage begins.'));
+    netSpareDevices(names, net.mine.length === 1, (k) => net.mine.includes(k));
+    $('p2note').hidden = true;
+    $('padhint').hidden = navigator.getGamepads().some(Boolean);
+    return;
+  }
   if (replay && replay.now) {
     const word = { h: 'Person', b: 'Bot', '-': 'Empty' };
     for (let i = 0; i < 4; i++) {
@@ -800,8 +994,16 @@ function saveDiagnostics() {
     L.push(`bots state ${Module._web_bot_state()}` + (Module._web_bot_state() === 2 ? ': ' + Module.UTF8ToString(Module._web_bot_error()) : ''));
   }
   L.push('', '== players');
-  for (let i = 0; i < 4; i++) L.push(`P${i + 1}: ${role(i) === 'h' ? names[deviceOn(i)] : role(i) === 'b' ? 'bot' : 'empty'}`);
+  for (let i = 0; i < 4; i++) {
+    // online: the seats are the game's (this computer plays some, or none)
+    const who = !net.started ? (role(i) === 'h' ? names[deviceOn(i)] : role(i) === 'b' ? 'bot' : 'empty')
+      : net.dropped[i] ? `bot (its player left at poll ${net.dropped[i]})`
+      : net.owners[i] === net.id ? 'this computer' + (deviceOn(i) ? ` (${names[deviceOn(i)]})` : net.mine.length === 1 ? ' (any controller)' : ' (no controller)')
+      : net.owners[i] ? 'another computer' : net.seats[i] === 'b' ? 'bot' : 'empty';
+    L.push(`P${i + 1}: ${who}`);
+  }
   L.push(`bots can't lose health: ${botGod}; chosen by hand: ${JSON.stringify(seatChoice)}`);
+  if (net.role) L.push('', '== online', ...netDiagnostics());
   L.push('', '== devices (page)');
   for (const [dev, name] of Object.entries(names)) {
     L.push(`${dev} "${name}": player ${assign[dev] >= 0 ? 'P' + (assign[dev] + 1) : 'none'}`);
@@ -842,10 +1044,11 @@ function frame() {
   pollPadCapture();
   updateMapper();
   updateReplay();
+  if (running) netWritePads();   // online: the pads go to the core's lockstep input instead
   const masks = readInput();
   if (running) {
     const base = Module._web_input_ptr() >> 2;
-    for (let i = 0; i < 4; i++) Module.HEAPU32[base + i] = masks[i];
+    if (!net.started) for (let i = 0; i < 4; i++) Module.HEAPU32[base + i] = masks[i];
     const seq = Module._web_frame_seq();
     if (seq !== lastSeq) {
       lastSeq = seq;
@@ -902,4 +1105,5 @@ $('mapper').onclick = (e) => { if (e.target === $('mapper')) closeMapper(); };
 $('botgod').checked = botGod;
 $('botgod').onchange = () => { botGod = $('botgod').checked; pushSeats(); };
 renderPlayers();
+netSetup();
 requestAnimationFrame(frame);
