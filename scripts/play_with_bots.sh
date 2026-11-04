@@ -66,9 +66,9 @@ sed -e "s/^local HUMAN = .*/local HUMAN = $human/" -e "s/^local BOT_GOD = .*/loc
   -e "s|^local START_STATE = .*|local START_STATE = $state|" \
   "$root/scripts/lua/play_with_bots.lua" > "$script"
 if ! $video; then
-  exec "$root/tools/mesen-tmnt4p/Mesen" "$rom" "$script"
+  exec "$root/tools/mesen-tmnt4p/mesen-tmnt4p" "$rom" "$script"
 fi
-"$root/tools/mesen-tmnt4p/Mesen" "$rom" "$script" || true
+"$root/tools/mesen-tmnt4p/mesen-tmnt4p" "$rom" "$script" || true
 # AVI (Mesen's ZMBV, game picture and sound) -> MP4: 3x with sharp pixels (sites
 # blur small videos), H.264 + AAC, playable everywhere. medium/crf 23 + tune
 # animation + 10 s keyframes, chosen for speed (30 s Scene 4 clip): 3.5 s to

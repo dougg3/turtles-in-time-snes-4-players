@@ -36,7 +36,7 @@ work="$(mktemp -d)"
 echo "replaying $rec/session.mmo ..."
 TMNT_SCRIPT="$root/scripts/lua/movie_video.lua" TMNT_OUT="$work" MOVIE="$rec/session.mmo" \
   VIDEO_OUT="$work/video.avi" VIDEO_FIRST="$first" VIDEO_LAST="$last" timeout 14400 \
-  "$root/tools/mesen-tmnt4p/Mesen" --testRunner --timeout=14400 --donotsavesettings \
+  "$root/tools/mesen-tmnt4p/mesen-tmnt4p" --testRunner --timeout=14400 --donotsavesettings \
   "$root/scripts/lua/protect.lua" "$rom" > "$work/mesen.log" 2>&1 || true
 cat "$work/movie_video.txt" "$work/error.txt" 2>/dev/null || true
 [ -s "$work/video.avi" ] || { echo "no video was recorded (log: $work)" >&2; exit 1; }

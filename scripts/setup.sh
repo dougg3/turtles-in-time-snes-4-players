@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Download and build the tools into tools/, at the versions in scripts/tools.sh:
 #   scripts/setup.sh        Asar (tools/bin/asar), Flips (tools/bin/flips) and mesen-tmnt4p
-#                           (tools/mesen-tmnt4p/Mesen, with the .NET SDK it needs in tools/dotnet)
+#                           (tools/mesen-tmnt4p/mesen-tmnt4p, with the .NET SDK it needs in tools/dotnet)
 #   scripts/setup.sh web    also the Emscripten SDK (tools/emsdk), for scripts/build_web.sh
 # Nothing is installed outside tools/. Run it again after a version changes; finished
 # steps are skipped. Needs git, curl, make, cmake, clang, Python 3, xz and the SDL2
@@ -73,7 +73,8 @@ if ! stamp mesen-tmnt4p "$MESEN_TMNT4P_COMMIT"; then
   # unpacks (its core among them) in tools/mesen-tmnt4p, apart from any other Mesen
   mkdir -p "$tools/mesen-tmnt4p"
   rm -f "$tools/mesen-tmnt4p/MesenCore.so"     # unpacked again from the new build
-  for f in Mesen libSkiaSharp.so libHarfBuzzSharp.so; do    # the program and its UI libraries
+  rm -f "$tools/mesen-tmnt4p/Mesen"            # the program's name before it was renamed
+  for f in mesen-tmnt4p libSkiaSharp.so libHarfBuzzSharp.so; do    # the program and its UI libraries
     cp "$src/bin/linux-x64/Release/linux-x64/publish/$f" "$tools/mesen-tmnt4p/$f"
   done
   # the test runner and the bots are Lua scripts that read and write files, and take
