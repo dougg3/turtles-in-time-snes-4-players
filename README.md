@@ -31,6 +31,8 @@ You need an original dump of the game in order to play. These versions are suppo
 
 The easiest way to play is to use the [online WebAssembly version](https://tmnt.downtowndougbrown.com) in your browser. You just have to provide your original ROM dump, and it will automatically patch it and let you play with 4 players. You can use your game controller(s) in the browser, and you can also add (terrible) bot players if you want to try the 4-player experience without four actual people.
 
+You can also play it on your local machine using the mesen-tmnt4p emulator fork. [Here are downloads for Windows, Mac, and Linux](https://github.com/dougg3/mesen-tmnt4p/releases). The [online WebAssembly version](https://tmnt.downtowndougbrown.com) lets you download a 4-player patched ROM if you provide an original ROM. **Again, to be clear, the patched ROM will only run correctly in the special mesen-tmnt4p emulator linked here.** You will also need to set up the controller configuration in mesen-tmnt4p. Set port 1 as an SNES controller, port 2 as a Super Multitap, and then attach SNES controllers to ports 1-3 of the Multitap.
+
 ## Building the patched ROM
 
 Currently, only Ubuntu Linux is tested for building all of this. Start by installing all prerequisites:
