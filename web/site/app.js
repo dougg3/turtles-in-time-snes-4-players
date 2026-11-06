@@ -58,9 +58,13 @@ function status(text, kind) { statusEl.textContent = text; statusEl.className = 
 // a file for the player to save (session log, diagnostics): <prefix>-<local date-time><ext>
 function download(prefix, data, ext = '.txt') {
   const now = new Date(), two = (n) => String(n).padStart(2, '0');
+  saveFile(`${prefix}-${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}${ext}`,
+    data instanceof Blob ? data : new Blob([data], { type: 'text/plain' }));
+}
+function saveFile(name, blob) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type: 'text/plain' }));
-  a.download = `${prefix}-${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}${ext}`;
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
@@ -126,6 +130,17 @@ function applyBps(source, patch) {
   return out;
 }
 
+// the patched ROM, for the desktop emulator (mesen-tmnt4p): tmnt4-4p.sfc, tmnt4-4p-eu.sfc, ...
+const romName = (known) => known.patch.replace(/-patch\.bps$/, '.sfc');
+async function patchRom(bytes, known) {
+  return applyBps(bytes, new Uint8Array(await (await fetch(known.patch)).arrayBuffer()));
+}
+let running4p = null;   // {known, rom} of the game running, for Download ROM
+async function downloadRom(bytes, known) {
+  try { saveFile(romName(known), new Blob([await patchRom(bytes, known)], { type: 'application/octet-stream' })); }
+  catch (e) { status('Patch failed: ' + e.message, 'bad'); }
+}
+
 async function useRom(bytes, remember) {
   if (!ready) { status('Emulator still loading, try again in a moment.', 'bad'); return; }
   if (bytes.length % 1024 === 512) bytes = bytes.subarray(512);   // copier header
@@ -145,10 +160,8 @@ async function useRom(bytes, remember) {
   }
   status(`ROM verified (${known.name}). Applying the four-player patch…`, 'ok');
   let rom;
-  try {
-    const patch = new Uint8Array(await (await fetch(known.patch)).arrayBuffer());
-    rom = applyBps(bytes, patch);
-  } catch (e) { status('Patch failed: ' + e.message, 'bad'); return; }
+  try { rom = await patchRom(bytes, known); } catch (e) { status('Patch failed: ' + e.message, 'bad'); return; }
+  running4p = { known, rom };
   try { localStorage.setItem('tmnt4p.lastRom', hash); } catch (e) {}
   session.rom = hash;
   session.fps = known.fps;
@@ -170,6 +183,7 @@ async function useRom(bytes, remember) {
   running = true;
   $('savelog').hidden = !!replay;
   $('playlog2').hidden = false;
+  $('getrom').hidden = false;
   $('overlay').classList.add('hidden');
 }
 
@@ -236,7 +250,12 @@ async function showSaved() {
       await showSaved();
       status(`Saved ${ROMS[hash].name} ROM deleted.`);
     };
-    row.append(go, forget);
+    const get = document.createElement('button');
+    get.className = 'small';
+    get.textContent = 'Download 4P ROM';
+    get.title = `Saves the patched ${ROMS[hash].name} ROM (${romName(ROMS[hash])}), to play in the desktop emulator mesen-tmnt4p (other emulators lack the extra sprites that 3 or 4 players need)`;
+    get.onclick = () => downloadRom(new Uint8Array(savedRoms[hash]), ROMS[hash]);
+    row.append(go, get, forget);
     list.append(row);
   });
   $('drop').hidden = order.length > 0;
@@ -313,6 +332,7 @@ async function saveLog() {
   download('tmnt4p-session', gz, '.txt.gz');
 }
 $('savelog').onclick = saveLog;
+$('getrom').onclick = () => { if (running4p) saveFile(romName(running4p.known), new Blob([running4p.rom], { type: 'application/octet-stream' })); };
 
 // ---------- playback of a session log ----------
 // The core starts once per page load, so a log chosen here is kept in sessionStorage and the
