@@ -449,11 +449,53 @@ GameOverTick4:
 ++  jsr DrawCompactMsg
 .done:
     plx
+    jsr OutDistinct4
 .cmp:
     jsl Other1A4
     cmp $0030,x : beq +
     jml $04D63C
 +   jml $04D643                     ; RTL
+
+; 4-box HUD, X = info of a box whose player isn't in the game (GAME OVER, or offering
+; a turtle with PRESS START): its turtle is shown by no player in the game (playing,
+; counting down, choosing) and no lower box, else it takes the next one that isn't, as
+; the original's P2 box moves off P1's turtle ($04:D45F). Higher boxes not in the game
+; give way to this one. (A player choosing after a continue could take a GAME OVER
+; box's turtle: two boxes said DON.) Keeps X.
+OutDistinct4:
+    phx
+    jsl InfoIndexY
+    sty !CharOwn
+    lda $001A,x : and #$0003 : sta !CharCand
+    lda #$0004 : sta !InfoCnt
+.try:
+    ldx #$0000
+.loop:
+    cpx !CharOwn : beq .next
+    bcc .check                      ; a lower box: always
+    lda.l InfoPtrAddr,x : tay       ; a higher one: only if in the game
+    lda $0000,y : bne .check
+    lda.l InfoBlocks,x : tay
+    lda $0000,y
+    cmp #$0002 : bcc .next
+    cmp #$0005 : bcs .next
+.check:
+    lda.l InfoBlocks,x : tay
+    lda $001A,y : and #$0003 : cmp !CharCand : beq .taken
+.next:
+    inx : inx
+    cpx #$0008 : bcc .loop
+    plx
+    lda !CharCand : cmp $001A,x : beq +
+    sta $001A,x
+    sta $0030,x                     ; (seen: no follow-up check, GameOverTick4)
+    jsl $04D561                     ; name and box color
++   rts
+.taken:
+    lda !CharCand : inc : and #$0003 : sta !CharCand
+    dec !InfoCnt : bne .try
+    plx                             ; (no free turtle: can't happen) keep it
+    rts
 
 ; ---- $04:D644 (JSR): the other player's turtle. 3P/4P: own (no follow-up change) ----
 Other1A4:
@@ -481,6 +523,10 @@ JoinCheck4:
     lda.l !Sel4State : cmp #$0001 : beq +
     lda $0000,x : cmp #$0008 : bne +
     jsr OfferFree4
++   lda $70 : and #$00FF : cmp #$0002 : beq +   ; in play: a box offering a turtle
+    lda $000E,x : bne +             ; (never in the game) shows one nobody else does
+    jsr HudCompact : bcc +
+    jsr OutDistinct4
 +   jml $04D489
 
 ; One-player select, X = info of a waiting box (state 8, WAIT A MOMENT): offer the
