@@ -69,6 +69,24 @@ SlotYfromIndex1:
     pla
     rtl
 
+; $00:DB9C (a player touched by a grabbing enemy, after the grab check $04:8298; was
+; LDA $50,X / STA $5E,X): the original stores the kind of hold in the player's +$5E
+; even when the grab failed (carry set: the enemy holds someone else already, or
+; this player is held). Then the player's state stays as it was, and an attack that
+; is just starting takes its attack object's type from the table at an odd index
+; ($00:BEB4): an object with a type that doesn't exist. Two players at one grabbing
+; ($00:BEB4): an object with a type that doesn't exist, whose handler is whatever
+; lies past the table ($00:C533): in the USA game the middle of the code that goes
+; on to the next game mode, so the stage ends there and then (in Scene 4, where a
+; Mouser bites one player and touches a second one that is starting an attack).
+; A bug of the original game with two players, likelier with three and four: the
+; failed grab now leaves +$5E alone, in every game. Keeps the carry.
+GrabStore:
+    bcs +
+    lda $50,x : sta $5E,x
++   pla
+    rtl
+
 Slots4End:
 assert Slots4End <= $20FFFF, "slots4 code overflows bank $20"
 
@@ -85,6 +103,7 @@ org $048298
     jsl IndexYfromX
     nop #6
 assert pc() == $0482A2
+org $00DB9C : jml GrabStore        ; was LDA $50,X / STA $5E,X (PLA / RTL follow)
 org $0481CF : jml SlotYfromIndex1   ; was DEY / BNE $81D6 / LDY #$0400 / RTL / ...
 
 ; Scene 6 plank trap, state 3 ($03:B166): the held player from +$5E = player
