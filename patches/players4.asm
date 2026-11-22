@@ -23,6 +23,7 @@ org $00FC00
 UpdatePlayers4:
     jsl Orig_PlayerUpdate
     lda !PlayerMode : and #$00FF : cmp #$0003 : bcc .done
+    jsl Dif4Frame           ; players in the game, enemy limit (difficulty4.asm)
     ldx !P3_ptr : beq .p4
     ldy #$0004 : jsr .tick
 .p4:

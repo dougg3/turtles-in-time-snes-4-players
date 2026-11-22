@@ -523,11 +523,12 @@ JoinCheck4:
     lda.l !Sel4State : cmp #$0001 : beq +
     lda $0000,x : cmp #$0008 : bne +
     jsr OfferFree4
-+   lda $70 : and #$00FF : cmp #$0002 : beq +   ; in play: a box offering a turtle
-    lda $000E,x : bne +             ; (never in the game) shows one nobody else does
-    jsr HudCompact : bcc +
++   lda $70 : and #$00FF : cmp #$0002 : bne ++  ; in play, and on the four-player select
+    lda.l !Sel4State : cmp #$0001 : bne +++     ; (the other selects: above, or the
+++  lda $000E,x : bne +++           ; original's): a box offering a turtle (never in
+    jsr HudCompact : bcc +++        ; the game) shows one nobody else does
     jsr OutDistinct4
-+   jml $04D489
++++ jml $04D489
 
 ; One-player select, X = info of a waiting box (state 8, WAIT A MOMENT): offer the
 ; first turtle from the box's own (P2 Mike, P3 Don, P4 Raph) that neither P1's cursor

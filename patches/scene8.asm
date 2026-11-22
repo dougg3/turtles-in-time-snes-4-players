@@ -15,6 +15,7 @@ HoverPlayers4:
 +   ldx $A0 : beq +
     ldy #$0002 : jsl HoverTick
 +   lda.l !PlayerMode : and #$00FF : cmp #$0003 : bcc .done
+    jsl Dif4Frame                   ; as the stage player update (difficulty4.asm)
     ldx !P3_ptr : beq +
     ldy #$0004 : jsl HoverTick
 +   ldx !P4_ptr : beq .done

@@ -482,8 +482,11 @@ Sel4Player:
 
 ; ---- P3/P4 joins (X = index * 2 = !SelMe) ----
 Sel4Join:
-    lda.l SelBit,x : ora !SelSession : sta !SelSession
-    lda.l SelFirst,x : sta !SelCand ; a turtle nobody is on, else one nobody confirmed
+    phx                             ; from the turtle the box offered (nobody is on
+    lda.l SelInfo,x : tax           ; it: OutDistinct4): a turtle nobody is on, else
+    lda $001A,x : and #$0003        ; one nobody confirmed
+    plx
+    sta !SelCand
     ldy #$0004
 -   lda !SelCand : jsr SelHovered : bcc .free
     inc : and #$0003 : sta !SelCand
@@ -491,7 +494,8 @@ Sel4Join:
     lda.l SelFirst,x : sta !SelCand
     jsr SelLocked : bcc .free
 .free:
-    lda.l SelInfo,x : tax
+    lda.l SelBit,x : ora !SelSession : sta !SelSession  ; (only now: the search above
+    lda.l SelInfo,x : tax                               ; mustn't count this box itself)
     phx                             ; credits, as character select gives P1/P2 ($00:A616:
     lda $1FEE : and #$0003 : asl : tax  ; table by $1FEE; was a fixed 4)
     lda.l $019423,x
